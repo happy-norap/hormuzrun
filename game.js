@@ -22,6 +22,13 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const fmtUSD = (v) => (v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v)).toLocaleString('en-US');
 const $ = (id) => document.getElementById(id);
 
+// ---------------------------------------------------------------- 表示言語
+// 画面の文章は lang フォルダの言語ファイルにあり、i18n.js が今の言語の文章を返す（無ければ日本語）。
+// T('キー', { 名前: 値 }) で文章を取り出す。ゲームの処理・数値・セーブ形式は言語に関係しない。
+const I18N = window.I18N || { t: (k) => k, setLang: () => false, applyDom: () => {}, dialogues: () => ({ cur: {}, ja: window.DIALOGUES || {} }), lang: 'ja', languages: () => [] };
+const T = (key, params) => I18N.t(key, params);
+I18N.applyDom();
+
 // ---------------------------------------------------------------- map
 // プレイヤーは -z 方向（北）へ進むと湾内。右手(+x)がイラン側、左手(-x)がオマーン側。
 // 航路の長さ方向（z）だけを L 倍する。海峡の幅・船や施設の大きさ・船速は変えない。
@@ -151,12 +158,12 @@ function buildWorld() {
   const arm = box(1.2, 12, 1.2, 0xf2a03a, TERM_ISLAND.x + 10, 9, TERM_ISLAND.z + 105); scene.add(arm);
 
   // 3Dラベル
-  addLabel('VLCC（依頼主）', VLCC_POS.x, 30, VLCC_POS.z);
-  addLabel('原油積込ターミナル', TERM_ISLAND.x, 30, TERM_ISLAND.z);
-  addLabel('▼ 海峡入口（契約破棄 限界線）', centerX(ez), 8, ez);
-  addLabel('ホルムズ海峡', centerX(0), 14, 0);
-  addLabel('イラン側（武装艇に注意）', iranShore(150) + 120, 70, 150);
-  addLabel('オマーン側（浅瀬・岩礁注意）', omanShore(-150) - 100, 45, -150);
+  addLabel('label.vlcc', VLCC_POS.x, 30, VLCC_POS.z);
+  addLabel('label.terminal', TERM_ISLAND.x, 30, TERM_ISLAND.z);
+  addLabel('label.entry', centerX(ez), 8, ez);
+  addLabel('label.strait', centerX(0), 14, 0);
+  addLabel('label.iran', iranShore(150) + 120, 70, 150);
+  addLabel('label.oman', omanShore(-150) - 100, 45, -150);
 }
 
 function ribbon(fLo, fHi, z0, z1, y, color, opacity) {
@@ -203,14 +210,16 @@ function makeTanker(o) {
 
 // ---------------------------------------------------------------- labels
 const labels = [];
-function addLabel(text, x, y, z, dyn) {
+// key：言語ファイルの文章のキー（言語を切り替えたら relabel で書き直す）
+function addLabel(key, x, y, z, dyn) {
   const el = document.createElement('div');
-  el.textContent = text;
+  el.textContent = T(key);
   $('labels').appendChild(el);
-  const l = { el, pos: new THREE.Vector3(x, y, z), dyn };
+  const l = { el, key, pos: new THREE.Vector3(x, y, z), dyn };
   labels.push(l);
   return l;
 }
+function relabel() { for (const l of labels) if (l.key) l.el.textContent = T(l.key); }
 const _v = new THREE.Vector3();
 function updateLabels() {
   const show = G.mode !== 'title';
@@ -467,9 +476,9 @@ function bgmSceneFor() {
 function soundPanelHtml() {
   return `<div class="soundPanel">
     <span class="lbl">BGM</span><button class="btn mini${sound.bgmOn ? ' on' : ''}" data-snd="toggle">${sound.bgmOn ? 'ON' : 'OFF'}</button>
-    <input type="range" min="0" max="100" value="${Math.round(sound.bgmVol * 100)}" data-snd="bgm" aria-label="BGM音量">
-    <span class="lbl">効果音</span><input type="range" min="0" max="100" value="${Math.round(sound.sfxVol * 100)}" data-snd="sfx" aria-label="効果音の音量">
-    <span class="lbl hint pcOnly">M キーでBGMのON/OFF</span>
+    <input type="range" min="0" max="100" value="${Math.round(sound.bgmVol * 100)}" data-snd="bgm" aria-label="${T('sound.bgmVolAria')}">
+    <span class="lbl">${T('sound.sfx')}</span><input type="range" min="0" max="100" value="${Math.round(sound.sfxVol * 100)}" data-snd="sfx" aria-label="${T('sound.sfxVolAria')}">
+    <span class="lbl hint pcOnly">${T('sound.hintM')}</span>
   </div>`;
 }
 function toggleBgm() {
@@ -658,6 +667,8 @@ $('overlay').addEventListener('change', (e) => { if (e.target.dataset && e.targe
 $('overlay').addEventListener('click', (e) => {
   if (G.quit) return; // 終了後は何も受け付けない
   if (e.target.closest('[data-snd="toggle"]')) { toggleBgm(); return; }
+  const lb = e.target.closest('[data-lang]');
+  if (lb) { changeLanguage(lb.dataset.lang); return; }
   const b = e.target.closest('[data-act]');
   if (!b) return;
   const act = b.dataset.act;
@@ -680,6 +691,13 @@ $('overlay').addEventListener('click', (e) => {
 // 失敗しても累計スコアは失われず、失敗したステージの開始時点から再挑戦できる。
 // 保存できない環境でもゲームは遊べる（その場合は再挑戦だけが使え、再読み込みすると最初から）。
 const SAVE_VERSION = 1;
+// ステージ別損益の記録（history）の note に入れる値。セーブデータの互換性のため、言語に関係なく
+// この日本語の値のまま保存し、画面に出すときだけ今の言語の文章に置き換える（noteLabel）。
+const NOTE = { settled: '清算', failed: '失敗', cancelled: '契約破棄' };
+function noteLabel(note) {
+  const k = Object.keys(NOTE).find((key) => NOTE[key] === note);
+  return k ? T('hist.' + k) : note;
+}
 let SAVE_KEY = 'hormuz_save_v1';
 const save = {
   // 読み込み結果：status は none（なし）/ ok / corrupt（壊れている）/ old（形式が違う）/ unavailable（保存不可の環境）
@@ -696,7 +714,7 @@ const save = {
         typeof d.banked === 'number' && isFinite(d.banked) && Array.isArray(d.history);
       if (!valid) return { status: 'corrupt' };
       d.history = d.history.filter((h) => h && Number.isInteger(h.stage) && typeof h.pnl === 'number' && isFinite(h.pnl))
-        .map((h) => ({ stage: h.stage, pnl: h.pnl, note: String(h.note || '清算').slice(0, 10) }));
+        .map((h) => ({ stage: h.stage, pnl: h.pnl, note: String(h.note || NOTE.settled).slice(0, 10) }));
       return { status: 'ok', data: d };
     } catch (e) { return { status: 'corrupt' }; }
   },
@@ -704,7 +722,7 @@ const save = {
   write(nextStage, completed) {
     const d = {
       version: SAVE_VERSION, nextStage, cleared: G.cleared, banked: G.banked,
-      history: G.history.filter((h) => h.note !== '失敗').map((h) => ({ stage: h.stage, pnl: h.pnl, note: h.note })),
+      history: G.history.filter((h) => h.note !== NOTE.failed).map((h) => ({ stage: h.stage, pnl: h.pnl, note: h.note })),
       completed: !!completed, savedAt: new Date().toISOString(),
     };
     try { window.localStorage.setItem(SAVE_KEY, JSON.stringify(d)); return true; } catch (e) { return false; }
@@ -712,7 +730,7 @@ const save = {
   clear() { try { window.localStorage.removeItem(SAVE_KEY); return true; } catch (e) { return false; } },
 };
 // ステージ開始時点の確定状態（再挑戦はここへ戻す。保存できない環境でも使える）
-function snapshotAttempt() { G.attempt = { stage: G.stage, banked: G.banked, cleared: G.cleared, history: G.history.filter((h) => h.note !== '失敗').map((h) => ({ ...h })) }; }
+function snapshotAttempt() { G.attempt = { stage: G.stage, banked: G.banked, cleared: G.cleared, history: G.history.filter((h) => h.note !== NOTE.failed).map((h) => ({ ...h })) }; }
 function retryStage() {
   const a = G.attempt;
   if (!a) { continueGame(); return; }
@@ -736,23 +754,41 @@ function confirmNewGame() {
   const r = save.read();
   if (r.status !== 'ok' || r.data.completed) { startFresh(); return; }
   G.mode = 'confirmNew';
-  overlay(`<div class="card" style="max-width:520px;text-align:center"><h2>NEW GAME</h2>
-    <p>続きのセーブデータ（STAGE ${r.data.nextStage} から・累計 ${fmtUSD(r.data.banked)}）があります。</p>
-    <p>ステージ1から始めると、このセーブデータは<b>削除</b>されます。よろしいですか？</p>
-    <div class="btns"><button class="btn danger" data-act="newYes">削除して最初から始める</button><button class="btn" data-act="title">やめる</button></div></div>`);
+  overlay(`<div class="card" style="max-width:520px;text-align:center"><h2>${T('btn.newGame')}</h2>
+    <p>${T('newgame.hasSave', { stage: r.data.nextStage, banked: fmtUSD(r.data.banked) })}</p>
+    <p>${T('newgame.warn')}</p>
+    <div class="btns"><button class="btn danger" data-act="newYes">${T('newgame.yes')}</button><button class="btn" data-act="title">${T('newgame.no')}</button></div></div>`);
 }
 
 // タイトル画面のボタン（セーブがあれば CONTINUE を表示）
 function titleButtonsHtml() {
   const r = save.read();
   let note = '';
-  if (r.status === 'corrupt' || r.status === 'old') note = '<p class="sub saveNote">⚠ セーブデータを読み込めなかったため、続きから再開できません。「世界を救ってみる」で最初から始められます。</p>';
-  if (r.status === 'unavailable') note = '<p class="sub saveNote">⚠ この環境では進行状況を保存できません（ゲームは遊べますが、ページを閉じると最初からになります）。</p>';
+  if (r.status === 'corrupt' || r.status === 'old') note = `<p class="sub saveNote">${T('save.corrupt')}</p>`;
+  if (r.status === 'unavailable') note = `<p class="sub saveNote">${T('save.unavailable')}</p>`;
   if (r.status === 'ok' && !r.data.completed) {
-    return `<div class="btns"><button class="btn on" data-act="continue">CONTINUE<span class="btnSub">STAGE ${r.data.nextStage} から ／ 累計 ${fmtUSD(r.data.banked)}</span></button><button class="btn" data-act="start">NEW GAME</button><button class="btn" data-act="quit">他の仕事を探す</button></div>`;
+    return `<div class="btns"><button class="btn on" data-act="continue">${T('btn.continue')}<span class="btnSub">${T('btn.continueSub', { stage: r.data.nextStage, banked: fmtUSD(r.data.banked) })}</span></button><button class="btn" data-act="start">${T('btn.newGame')}</button><button class="btn" data-act="quit">${T('btn.quit')}</button></div>`;
   }
-  if (r.status === 'ok' && r.data.completed) note = '<p class="sub saveNote">前回の航海は「ホルムズ海峡の伝説」で完結しました。「世界を救ってみる」で新しい航海を始められます。</p>';
-  return `<div class="btns"><button class="btn on" data-act="start">世界を救ってみる</button><button class="btn" data-act="quit">他の仕事を探す</button></div>${note}`;
+  if (r.status === 'ok' && r.data.completed) note = `<p class="sub saveNote">${T('save.completed')}</p>`;
+  return `<div class="btns"><button class="btn on" data-act="start">${T('btn.start')}</button><button class="btn" data-act="quit">${T('btn.quit')}</button></div>${note}`;
+}
+
+// タイトル画面の言語選択（選んだ言語はセーブとは別に保存される）
+function langPanelHtml() {
+  const list = I18N.languages();
+  if (list.length < 2) return '';
+  return `<div class="langPanel" role="group" aria-label="${T('lang.aria')}"><span class="lbl" aria-hidden="true">🌐</span>` +
+    list.map((l) => `<button class="btn mini${l.code === I18N.lang ? ' on' : ''}" data-lang="${l.code}" lang="${l.code}" aria-pressed="${l.code === I18N.lang}">${l.name}</button>`).join('') +
+    '</div>';
+}
+// 言語を切り替える。進行状況・スコア・セーブ・BGMには触れず、表示だけを書き直す
+function changeLanguage(code) {
+  if (code === I18N.lang || !I18N.setLang(code)) return;
+  clearTimeout(msgTimer); $('msg').style.opacity = 0; $('msg').textContent = ''; // 前の言語のメッセージを残さない
+  $('costs').innerHTML = '';
+  relabel();
+  updateButtons();
+  if (G.mode === 'title') showTitle();
 }
 
 function showTitle() {
@@ -763,25 +799,22 @@ function showTitle() {
   resetEventUI();
   setSky(SKY);
   overlay(`<div class="card">
-    <div class="catch">君は世界を救えるか？</div>
-    <h1>ホルムズ海峡を駆け抜けろ！</h1>
-    <p class="sub">STRAIT RUNNER — 架空の海域を舞台にした船舶アクション</p>
-    <p>あなたは小型タンカーの船長。インド洋側に停泊する超大型タンカー（VLCC）の船長から、<b>危険な海峡の向こうにある原油ターミナルから原油を運んでくる</b>仕事を請け負った。</p>
-    <p>VLCCを出発し、ホルムズ海峡を抜けて湾内のターミナルで原油を積み込み、再び海峡を越えてVLCCへ戻れば契約完了。</p>
+    ${langPanelHtml()}
+    <div class="catch">${T('title.catch')}</div>
+    <h1>${T('title.h1')}</h1>
+    <p class="sub">${T('title.sub')}</p>
+    <p>${T('title.story1')}</p>
+    <p>${T('title.story2')}</p>
     <table>
-      <tr><td>契約報酬（1往復）</td><td>$3,000,000</td></tr>
-      <tr><td>被弾・座礁・ペナルティ</td><td>報酬から差し引き</td></tr>
-      <tr><td>機雷・ミサイル直撃 / ドローン被弾上限</td><td class="neg">即ゲームオーバー</td></tr>
-      <tr><td>ゲームオーバー時</td><td>累計報酬は保持。失敗したステージから再挑戦</td></tr>
-      <tr><td>全ステージ</td><td>10</td></tr>
+      <tr><td>${T('title.rule.reward')}</td><td>${fmtUSD(C.CONTRACT_REWARD)}</td></tr>
+      <tr><td>${T('title.rule.damage')}</td><td>${T('title.rule.damageVal')}</td></tr>
+      <tr><td>${T('title.rule.fatal')}</td><td class="neg">${T('title.rule.fatalVal')}</td></tr>
+      <tr><td>${T('title.rule.over')}</td><td>${T('title.rule.overVal')}</td></tr>
+      <tr><td>${T('title.rule.stages')}</td><td>${C.STAGE_COUNT}</td></tr>
     </table>
-    <p><b>稼ぐことより、どこで手を引くかが問われる。</b>契約を終えるたびに、次の仕事を受けるか撤退するかを選べる。</p>
-    <p class="keys pcOnly"><b>操舵：</b>A/D または ←/→（押している間だけ舵が切れ、離すと中央に戻る。船は前進しながら弧を描いて曲がる）<br>
-      <b>その他：</b>W/S・↑/↓ スロットル　Space ダッシュ　G GPS　P 一時停止（画面下のスイッチはマウスでも操作可）<br>
-      <b>積み込み／引き渡し：</b>黄色い円の中で「停止」または十分に減速する</p>
-    <p class="keys touchOnly"><b>操舵：</b>左下の ◀ ▶ を押している間だけ舵が切れ、離すと中央に戻る<br>
-      <b>その他：</b>右下の ▲加速・▼減速、DASH、GPS　上の II で一時停止（横向きでプレイ）<br>
-      <b>積み込み／引き渡し：</b>黄色い円の中で ▼ を押して「停止」にする</p>
+    <p>${T('title.retreatHint')}</p>
+    <p class="keys pcOnly">${T('title.keysPc')}</p>
+    <p class="keys touchOnly">${T('title.keysTouch')}</p>
     ${soundPanelHtml()}
     ${titleButtonsHtml()}
   </div>`);
@@ -801,8 +834,8 @@ function quitGame() {
   $('labels').style.display = 'none';
   $('msg').style.opacity = 0;
   overlay(`<div class="card quitCard">
-    <h2>お仕事探し、頑張ってください。</h2>
-    <p>ゲームを終了しました。このタブを閉じてください。</p>
+    <h2>${T('quit.h2')}</h2>
+    <p>${T('quit.p')}</p>
   </div>`);
   try { window.close(); } catch (e) { /* 閉じられない環境では終了画面のまま */ }
 }
@@ -815,27 +848,26 @@ function showIntro() {
   const s = G.stage;
   if (s >= 11) {
     overlay(`<div class="card"><h2>STAGE 11</h2>
-      <p>契約報酬 <b>$3,000,000</b></p>
-      <table><tr><td>危険度</td><td class="danger-meter">■■■■■■■■■■■ 測定不能</td></tr>
-      <tr><td>海域情報</td><td>— 通信が混線している —</td></tr></table>
-      <div class="btns"><button class="btn on" data-act="sail">出航</button></div></div>`);
+      <p>${T('intro.reward', { reward: '$3,000,000' })}</p>
+      <table><tr><td>${T('intro.danger')}</td><td class="danger-meter">■■■■■■■■■■■ ${T('intro.unmeasurable')}</td></tr>
+      <tr><td>${T('intro.seaInfo')}</td><td>${T('intro.crosstalk')}</td></tr></table>
+      <div class="btns"><button class="btn on" data-act="sail">${T('intro.sail')}</button></div></div>`);
     return;
   }
   const p = C.stageParams(s);
-  const threats = ['機雷 ' + Math.round(p.mines * L) + '基', '武装小型艇 ' + Math.round(p.boats * (C.BOAT_COUNT_SCALE || L)) + '隻', '岩礁・浅瀬'];
-  if (p.droneInterval) threats.push('自爆ドローン');
-  if (p.missileInterval) threats.push('対艦ミサイル');
-  if (p.gpsJam) threats.push('GPS妨害');
+  const threats = [T('threat.mines', { n: Math.round(p.mines * L) }), T('threat.boats', { n: Math.round(p.boats * (C.BOAT_COUNT_SCALE || L)) }), T('threat.rocks')];
+  if (p.droneInterval) threats.push(T('threat.drone'));
+  if (p.missileInterval) threats.push(T('threat.missile'));
+  if (p.gpsJam) threats.push(T('threat.gpsJam'));
   overlay(`<div class="card"><h2>STAGE ${s} / ${C.STAGE_COUNT}</h2>
     <table>
-      <tr><td>契約報酬（未清算）</td><td class="pos">${fmtUSD(C.CONTRACT_REWARD)}</td></tr>
-      <tr><td>清算済み累計スコア</td><td>${fmtUSD(G.banked)}</td></tr>
-      <tr><td>危険度</td><td class="danger-meter">${dangerBar(s)}</td></tr>
-      <tr><td>確認された脅威</td><td>${threats.join(' / ')}</td></tr>
+      <tr><td>${T('intro.rewardPending')}</td><td class="pos">${fmtUSD(C.CONTRACT_REWARD)}</td></tr>
+      <tr><td>${T('common.banked')}</td><td>${fmtUSD(G.banked)}</td></tr>
+      <tr><td>${T('intro.danger')}</td><td class="danger-meter">${dangerBar(s)}</td></tr>
+      <tr><td>${T('intro.threats')}</td><td>${threats.join(T('common.threatSep'))}</td></tr>
     </table>
-    <p class="sub">ルート：VLCC出発 → 海峡通過 → 原油ターミナルで積込 → 海峡通過 → VLCCへ帰還<br>
-    海峡入口（黄色いブイ列）を越えるまでは「契約破棄」で今回の航海を中止できる（損益は破棄。CONTINUEで同じステージに再挑戦）。</p>
-    <div class="btns"><button class="btn on" data-act="sail">出航</button></div></div>`);
+    <p class="sub">${T('intro.route')}</p>
+    <div class="btns"><button class="btn on" data-act="sail">${T('intro.sail')}</button></div></div>`);
 }
 
 function resetShip() {
@@ -869,15 +901,15 @@ function beginSail() {
   G.droneT = P.droneInterval ? 18 : 0;
   G.missileT = P.missileInterval ? 25 : 0;
   G.mode = 'play';
-  showMsg(`STAGE ${G.stage} 出航！\n原油ターミナルへ向かえ`, '#ffd36a', 2.6);
+  showMsg(T('msg.sail', { stage: G.stage }), '#ffd36a', 2.6);
 }
 
-// 船長のセリフは dialogues.js で管理する。改行は画面でも改行し、記号はそのまま表示する。
-// dialogues.js が読み込めなかった場合も、ゲームが止まらないよう予備のセリフを使う。
+// 船長のセリフは dialogues.js（日本語）と各言語ファイル（ほかの言語）で管理する。改行は画面でも改行し、記号はそのまま表示する。
+// 今の言語のセリフが無いときは日本語のセリフを使い、それも読み込めなかった場合も、ゲームが止まらないよう予備のセリフを使う。
 function captainLine(stage) {
-  const D = window.DIALOGUES || {};
-  const table = D.CAPTAIN_AFTER_STAGE || {};
-  const text = String(table[stage] || D.DEFAULT || 'よく戻ったな。報酬は振り込んでおいた。もう一回頼めないか？').trim();
+  const { cur, ja } = I18N.dialogues();
+  const pick = (D) => (D && D.CAPTAIN_AFTER_STAGE && D.CAPTAIN_AFTER_STAGE[stage]) || '';
+  const text = String(pick(cur) || pick(ja) || cur.DEFAULT || ja.DEFAULT || T('dlg.captainDefault')).trim();
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return esc.replace(/\r?\n/g, '<br>');
 }
@@ -886,40 +918,40 @@ function stageClear() {
   G.mode = 'captain';
   G.banked += G.pending;
   G.cleared++;
-  G.history.push({ stage: G.stage, pnl: G.pending, note: '清算' });
+  G.history.push({ stage: G.stage, pnl: G.pending, note: NOTE.settled });
   const saved = save.write(Math.min(G.stage + 1, C.STAGE_COUNT + 1), false); // 次に挑戦するステージを自動保存
   beep(660, 0.15, 0.08, 'triangle'); setTimeout(() => beep(880, 0.25, 0.08, 'triangle'), 160);
   const last = G.stage >= C.STAGE_COUNT;
   const captain = captainLine(G.stage);
-  overlay(`<div class="card captainCard"><h2>STAGE ${G.stage} 契約完了</h2>
-    <div class="captain">VLCC船長：「${captain}」</div>
+  overlay(`<div class="card captainCard"><h2>${T('clear.h2', { stage: G.stage })}</h2>
+    <div class="captain">${T('clear.captain', { line: captain })}</div>
     <table>
-      <tr><td>契約報酬</td><td>${fmtUSD(C.CONTRACT_REWARD)}</td></tr>
+      <tr><td>${T('clear.reward')}</td><td>${fmtUSD(C.CONTRACT_REWARD)}</td></tr>
       ${lossRows()}
-      <tr><td>今回の清算額</td><td class="${G.pending >= 0 ? 'pos' : 'neg'}">${fmtUSD(G.pending)}</td></tr>
-      <tr><td>清算済み累計スコア</td><td class="pos">${fmtUSD(G.banked)}</td></tr>
+      <tr><td>${T('clear.settle')}</td><td class="${G.pending >= 0 ? 'pos' : 'neg'}">${fmtUSD(G.pending)}</td></tr>
+      <tr><td>${T('common.banked')}</td><td class="pos">${fmtUSD(G.banked)}</td></tr>
     </table>
-    <p class="sub">${saved ? '💾 進行状況を保存しました。' : '⚠ 進行状況を保存できませんでした（ブラウザの設定で保存が禁止されている可能性があります）。'}次の契約で沈んでも累計スコアは失われず、そのステージから再挑戦できます。</p>
+    <p class="sub">${saved ? T('clear.saved') : T('clear.saveFailed')}${T('clear.saveTail')}</p>
     <div class="btns">
-      <button class="btn on" data-act="next">${last ? 'さらに進む' : '次の契約を受ける'}</button>
-      <button class="btn" data-act="retreat">仕事を終えて撤退する</button>
+      <button class="btn on" data-act="next">${last ? T('clear.further') : T('clear.next')}</button>
+      <button class="btn" data-act="retreat">${T('clear.retreat')}</button>
     </div></div>`);
 }
 function lossRows() {
-  const names = { repair: '船体修理費', injury: '乗組員負傷補償', penalty: 'ペナルティ', fuel: '燃料費（ダッシュ）', minor: 'その他の軽微な損傷' };
-  return Object.keys(names).filter((k) => G.lossBy[k]).map((k) => `<tr><td>${names[k]}</td><td class="neg">-${fmtUSD(G.lossBy[k])}</td></tr>`).join('');
+  const kinds = ['repair', 'injury', 'penalty', 'fuel', 'minor'];
+  return kinds.filter((k) => G.lossBy[k]).map((k) => `<tr><td>${T('loss.' + k)}</td><td class="neg">-${fmtUSD(G.lossBy[k])}</td></tr>`).join('');
 }
 
 function openCancel() {
   if (G.mode !== 'play' || G.phase !== 'outbound' || G.cancelLocked || G.stage >= 11) return; // 第11ステージは契約破棄不可
   G.mode = 'confirm';
-  overlay(`<div class="card"><h2>契約を破棄しますか？</h2>
+  overlay(`<div class="card"><h2>${T('cancel.h2')}</h2>
     <table>
-      <tr><td>今回の航海で発生した損益（破棄されます）</td><td class="neg">-${fmtUSD(G.losses)}</td></tr>
-      <tr><td>清算済み累計スコア（変わりません）</td><td>${fmtUSD(G.banked)}</td></tr>
+      <tr><td>${T('cancel.losses')}</td><td class="neg">-${fmtUSD(G.losses)}</td></tr>
+      <tr><td>${T('cancel.banked')}</td><td>${fmtUSD(G.banked)}</td></tr>
     </table>
-    <p class="sub">契約を破棄すると今回の航海を中止します。このステージは未クリアのまま、タイトル画面の「CONTINUE」からステージの最初に再挑戦できます。</p>
-    <div class="btns"><button class="btn danger" data-act="cancelYes">破棄して航海を中止する</button><button class="btn" data-act="cancelNo">航行を続ける</button></div></div>`);
+    <p class="sub">${T('cancel.note')}</p>
+    <div class="btns"><button class="btn danger" data-act="cancelYes">${T('cancel.yes')}</button><button class="btn" data-act="cancelNo">${T('cancel.no')}</button></div></div>`);
 }
 // 契約破棄：今回の航海を中止する。未確定の損益は破棄し、ステージ開始前の確定状態に戻す（累計は減らさない）。
 // このステージは未クリアのまま保存し、CONTINUE で同じステージの冒頭から再開できるようにする。
@@ -936,22 +968,23 @@ function gameOver(reason) {
   G.mode = 'dying';
   G.dieT = 0;
   G.dieReason = reason;
-  G.history.push({ stage: G.stage, pnl: -G.losses, note: '失敗' });
+  G.history.push({ stage: G.stage, pnl: -G.losses, note: NOTE.failed });
   const S = G.ship;
   explosion(S.x, 3, S.z, 2.2, true);
   noise(1.6, 0.5, 600);
-  const texts = { mine: '機雷に接触！', missile: 'ミサイル直撃！', drone_empty: '航行不能！', drone_loaded: '積荷炎上・沈没！', hull: '船体損傷・航行不能！', collision: '激突・船体大破！' };
-  showMsg(texts[reason] || 'ゲームオーバー', '#ff6b5e', 3);
+  const known = ['mine', 'missile', 'drone_empty', 'drone_loaded', 'hull', 'collision'];
+  showMsg(known.includes(reason) ? T('over.' + reason) : T('over.default'), '#ff6b5e', 3);
 }
 
+// 称号：[必要な確定スコア, 称号の文章のキー]（称号名は rank.N.name、ひとことは rank.N.comment）
 const TITLES = [
-  [0, '赤字の船長', '海峡を前に、帳簿だけが沈んだ。'],
-  [1, '慎重すぎる見習い', '命あっての物種。悪くない判断だ。'],
-  [3000000, '堅実な運び屋', '危険と報酬の天秤を、きちんと読めている。'],
-  [9000000, '海峡の古狸', '危ない橋を渡りつつ、落ちる前に引き返す。'],
-  [15000000, '命知らずの船長', 'その度胸、保険屋が泣いている。'],
-  [21000000, '海峡の古強者', '酒場では、もうあなたの噂で持ちきりだ。'],
-  [27000000, '引き際の神', '全てを手に入れ、そして生きて帰った。完璧だ。'],
+  [0, 'rank.0'],
+  [1, 'rank.1'],
+  [3000000, 'rank.2'],
+  [9000000, 'rank.3'],
+  [15000000, 'rank.4'],
+  [21000000, 'rank.5'],
+  [27000000, 'rank.6'],
 ];
 function endGame(reason) {
   G.resultReason = reason; // BGMの選曲に使う
@@ -960,35 +993,33 @@ function endGame(reason) {
   $('progress').style.display = 'none';
   const legend = reason === 'legend';
   const over = !['retreat', 'cancel', 'legend'].includes(reason);
-  const reasonText = {
-    retreat: '自主撤退', cancel: '契約破棄（今回の航海を中止）', mine: '沈没（機雷に接触）', missile: '沈没（ミサイル直撃）',
-    drone_empty: '航行不能（自爆ドローン被弾上限）', drone_loaded: '沈没（自爆ドローン被弾・積荷炎上）', hull: '航行不能（船体損傷）',
-    collision: '航行不能（高速衝突による船体大破）', stage11: '第11ステージ', legend: 'ゲームクリア（高評価ルート・第11ステージ）',
-  }[reason];
+  const reasonText = T('reason.' + reason);
   const finalScore = G.banked; // 失敗しても、それまでの確定スコアは失われない
-  let title, comment;
-  if (legend) { title = 'ホルムズ海峡の伝説'; comment = '大量破壊兵器は使われなかった。あなたの航海が、この海峡を守り抜いた。'; }
-  else if (reason === 'stage11') { title = '強欲の閃光'; comment = '欲張りすぎた。海峡は、もうどこにもない。'; }
-  else if (over) { title = '海の藻屑'; comment = '引き際を見誤った。……だが、まだ終わりではない。'; }
-  else { for (const t of TITLES) if (finalScore >= t[0]) { title = t[1]; comment = t[2]; } if (finalScore <= 0) { title = TITLES[0][1]; comment = TITLES[0][2]; } }
-  const hist = G.history.map((h) => `<tr><td>STAGE ${h.stage}（${h.note}）</td><td class="${h.pnl >= 0 ? 'pos' : 'neg'}">${fmtUSD(h.pnl)}</td></tr>`).join('');
-  overlay(`<div class="card${legend ? ' legend' : ''}"><h2>${legend ? 'GAME CLEAR' : (over ? 'GAME OVER' : '航海終了')}</h2>
-    ${legend ? '<p class="legendLabel">称号獲得</p>' : ''}
-    <div class="titleName">「${title}」</div>
+  let tk; // 称号の文章のキー
+  if (legend) tk = 'end.legend';
+  else if (reason === 'stage11') tk = 'end.s11';
+  else if (over) tk = 'end.over';
+  else { for (const t of TITLES) if (finalScore >= t[0]) tk = t[1]; if (finalScore <= 0) tk = TITLES[0][1]; }
+  const nameKey = tk.startsWith('rank.') ? '.name' : '.title';
+  const title = T(tk + nameKey), comment = T(tk + '.comment');
+  const hist = G.history.map((h) => `<tr><td>${T('end.histRow', { stage: h.stage, note: noteLabel(h.note) })}</td><td class="${h.pnl >= 0 ? 'pos' : 'neg'}">${fmtUSD(h.pnl)}</td></tr>`).join('');
+  overlay(`<div class="card${legend ? ' legend' : ''}"><h2>${legend ? T('end.h.clear') : (over ? T('end.h.over') : T('end.h.end'))}</h2>
+    ${legend ? `<p class="legendLabel">${T('end.legendLabel')}</p>` : ''}
+    <div class="titleName">${T('end.titleQuote', { title })}</div>
     <p style="text-align:center" class="sub">${comment}</p>
     <table>
-      ${legend ? `<tr><td>ステージ1〜10の累計獲得額</td><td class="pos">${fmtUSD(G.banked)}</td></tr><tr><td>高評価ライン</td><td>${fmtUSD(C.HIGH_RANK.THRESHOLD_USD)} 以上</td></tr>` : ''}
-      <tr><td>終了理由</td><td>${reasonText}</td></tr>
-      <tr><td>到達ステージ</td><td>STAGE ${G.stage}</td></tr>
-      <tr><td>成功した往復回数</td><td>${G.cleared} 回</td></tr>
-      <tr><td>確定スコア</td><td class="${finalScore > 0 ? 'pos' : (finalScore < 0 ? 'neg' : '')}" style="font-size:20px">${fmtUSD(finalScore)}</td></tr>
-      ${over ? `<tr><td>失敗した契約の損益（再挑戦で破棄）</td><td class="neg">${fmtUSD(-G.losses)}</td></tr>` : ''}
-      ${reason === 'cancel' ? `<tr><td>中止した航海の損益（破棄・累計に反映しない）</td><td class="neg">${fmtUSD(-(G.cancelledLosses || 0))}</td></tr>` : ''}
+      ${legend ? `<tr><td>${T('end.legendTotal')}</td><td class="pos">${fmtUSD(G.banked)}</td></tr><tr><td>${T('end.legendLine')}</td><td>${T('end.legendLineVal', { v: fmtUSD(C.HIGH_RANK.THRESHOLD_USD) })}</td></tr>` : ''}
+      <tr><td>${T('end.reason')}</td><td>${reasonText}</td></tr>
+      <tr><td>${T('end.reached')}</td><td>STAGE ${G.stage}</td></tr>
+      <tr><td>${T('end.trips')}</td><td>${T('end.tripsVal', { n: G.cleared })}</td></tr>
+      <tr><td>${T('end.score')}</td><td class="${finalScore > 0 ? 'pos' : (finalScore < 0 ? 'neg' : '')}" style="font-size:20px">${fmtUSD(finalScore)}</td></tr>
+      ${over ? `<tr><td>${T('end.failedLoss')}</td><td class="neg">${fmtUSD(-G.losses)}</td></tr>` : ''}
+      ${reason === 'cancel' ? `<tr><td>${T('end.cancelLoss')}</td><td class="neg">${fmtUSD(-(G.cancelledLosses || 0))}</td></tr>` : ''}
     </table>
-    ${hist ? `<p class="sub" style="margin-bottom:0">ステージ別損益</p><table>${hist}</table>` : ''}
-    ${over ? '<p class="sub" style="text-align:center">累計スコアは保持されます。「再挑戦」でこのステージの開始時点から、もう一度挑めます。</p>' : ''}
-    ${reason === 'cancel' ? `<p class="sub" style="text-align:center">${G.cancelSaved ? `STAGE ${G.stage} は未クリアです。タイトル画面の「CONTINUE」から、このステージの最初に再挑戦できます。` : '⚠ 進行状況を保存できませんでした（この環境ではCONTINUEで再開できません）。'}</p>` : ''}
-    <div class="btns">${over ? '<button class="btn on" data-act="retry">再挑戦（RETRY）</button>' : ''}<button class="btn${over ? '' : ' on'}" data-act="start">もう一度世界を救う</button><button class="btn" data-act="title">故郷へ帰る</button></div></div>`);
+    ${hist ? `<p class="sub" style="margin-bottom:0">${T('end.histHead')}</p><table>${hist}</table>` : ''}
+    ${over ? `<p class="sub" style="text-align:center">${T('end.overNote')}</p>` : ''}
+    ${reason === 'cancel' ? `<p class="sub" style="text-align:center">${G.cancelSaved ? T('end.cancelNote', { stage: G.stage }) : T('end.cancelSaveFail')}</p>` : ''}
+    <div class="btns">${over ? `<button class="btn on" data-act="retry">${T('btn.retry')}</button>` : ''}<button class="btn${over ? '' : ' on'}" data-act="start">${T('end.again')}</button><button class="btn" data-act="title">${T('end.home')}</button></div></div>`);
 }
 
 // ---------------------------------------------------------------- input
@@ -1014,7 +1045,7 @@ window.addEventListener('keyup', (e) => {
 });
 // 一時停止／再開（キーボードの P・Esc と、スマートフォンの一時停止ボタンで共通）
 function togglePause(forcePause) {
-  if (G.mode === 'play') { G.mode = 'paused'; releaseAllInput(); overlay(`<div class="card" style="max-width:560px;text-align:center"><h2>一時停止</h2>${soundPanelHtml()}<div class="btns"><button class="btn on" data-act="resume">再開</button></div></div>`); }
+  if (G.mode === 'play') { G.mode = 'paused'; releaseAllInput(); overlay(`<div class="card" style="max-width:560px;text-align:center"><h2>${T('pause.h2')}</h2>${soundPanelHtml()}<div class="btns"><button class="btn on" data-act="resume">${T('pause.resume')}</button></div></div>`); }
   else if (G.mode === 'paused' && !forcePause) { hideOverlay(); G.mode = 'play'; }
 }
 
@@ -1106,7 +1137,7 @@ function updateButtons() {
   $('tDash').classList.toggle('dashOn', G.dash);
   $('tGps').classList.toggle('on', G.gps);
   $('tGps').textContent = G.gps ? 'GPS ON' : 'GPS OFF';
-  $('tThr').textContent = ['停止', '半速', '通常'][G.throttle];
+  $('tThr').textContent = T('thr.' + G.throttle);
   $('tCancel').disabled = $('btnCancel').disabled;
   $('tCancel').style.visibility = $('btnCancel').disabled ? 'hidden' : 'visible';
 }
@@ -1156,7 +1187,7 @@ function bounce(nx, nz, push) {
 // ---- 衝突（岩礁・海岸・武装艇・VLCC・原油基地 共通） ----
 // nx,nz：船を押し出す向き、push：めり込み量、ovx/ovz：相手の速度。
 // 押し戻しは毎回行い（めり込み・すり抜け防止）、減額は同じ相手につき COOLDOWN_SEC に1回だけ。
-const COL_NAMES = { land: '陸岸', rock: '岩礁', boat: '武装艇', tanker: 'VLCC', facility: '原油基地' };
+const COL_KINDS = ['land', 'rock', 'boat', 'tanker', 'facility']; // 名前は言語ファイルの col.（種類）
 const colKeys = {};
 function collide(kind, key, nx, nz, push, ovx = 0, ovz = 0) {
   const S = G.ship, CO = C.COLLISION;
@@ -1170,21 +1201,21 @@ function collide(kind, key, nx, nz, push, ovx = 0, ovz = 0) {
   const k = typeof key === 'object' ? key : (colKeys[key] = colKeys[key] || {});
   if (closing < CO.MIN_SPEED || G.time - (k.colT == null ? -99 : k.colT) < CO.COOLDOWN_SEC) return;
   k.colT = G.time;
-  const mul = CO.KIND[kind] || 1, v2 = closing * closing, name = COL_NAMES[kind] || '構造物';
+  const mul = CO.KIND[kind] || 1, v2 = closing * closing, name = T(COL_KINDS.includes(kind) ? 'col.' + kind : 'col.other');
   const heavy = closing >= CO.HEAVY_SPEED;
   const cost = Math.round((CO.COST_BASE + CO.COST_PER_SPEED2 * v2) * mul / 500) * 500;
   noise(heavy ? 0.7 : 0.35, heavy ? 0.45 : 0.25, heavy ? 350 : 700);
   for (let i = 0; i < (heavy ? 14 : 6); i++) spawn({ pos: new THREE.Vector3(S.x - nx * 4, 2.5, S.z - nz * 4), vel: new THREE.Vector3(rand(-6, 6), rand(3, 10), rand(-6, 6)), color: 0xffd080, size: 0.35, life: 0.4, grav: 20 });
   if (closing >= CO.FATAL_SPEED && CO.FATAL_KINDS.includes(kind) && !invincible()) {
-    charge(cost, `${name}に激突 船体大破`, 'repair');
+    charge(cost, T('col.fatalCharge', { name }), 'repair');
     G.hull = 0;
     gameOver('collision');
     return;
   }
-  charge(cost, `${name}と${heavy ? '激突' : '接触'} 船体修理費`, 'repair');
+  charge(cost, T(heavy ? 'col.chargeHeavy' : 'col.chargeLight', { name }), 'repair');
   damageHull(CO.HULL_PER_SPEED2 * v2 * mul);
   shake(heavy ? 1.4 : 0.5);
-  if (heavy) showMsg(`${name}に激突！`, '#ff9a6a', 1.4);
+  if (heavy) showMsg(T('col.msgHeavy', { name }), '#ff9a6a', 1.4);
 }
 // 点が軸平行の長方形に入っていたら押し出し方向とめり込み量を返す
 function rectHit(px, pz, cx, cz, hx, hz) {
@@ -1224,7 +1255,7 @@ function hazards(dt) {
   if (S.grounded) {
     G.shoalT += dt;
     damageHull(C.HULL_DAMAGE.SHOAL_PER_SEC * dt);
-    if (G.shoalT >= 1) { G.shoalT = 0; charge(C.COSTS.SHOAL_PER_SEC, '浅瀬座礁 船底損傷', 'minor'); }
+    if (G.shoalT >= 1) { G.shoalT = 0; charge(C.COSTS.SHOAL_PER_SEC, T('charge.shoal'), 'minor'); }
     if (Math.random() < dt * 8) splash(S.x + rand(-4, 4), S.z + rand(-10, 10), 1.5);
   } else G.shoalT = 0.6;
   // 岩礁
@@ -1241,7 +1272,7 @@ function hazards(dt) {
     const m = mines[i];
     if (shipDist(m.x, m.z) < C.MINE_TRIGGER_RADIUS) {
       explosion(m.x, 1, m.z, 2.5, true); scene.remove(m.mesh);
-      if (invincible()) { mines.splice(i, 1); showMsg('機雷に接触！（無敵：ノーダメージ）', '#9fd8ff', 1.6); continue; }
+      if (invincible()) { mines.splice(i, 1); showMsg(T('msg.mineInvincible'), '#9fd8ff', 1.6); continue; }
       gameOver('mine'); return;
     }
   }
@@ -1253,7 +1284,7 @@ function rules(dt) {
   // 海峡進入で契約破棄ロック
   if (G.phase === 'outbound' && !G.cancelLocked && S.z < MAP.STRAIT_ENTRY_Z) {
     G.cancelLocked = true; updateButtons();
-    showMsg('ホルムズ海峡に進入\nもう契約は破棄できない', '#ffd36a', 2.6);
+    showMsg(T('msg.strait'), '#ffd36a', 2.6);
   }
   // 積み込み / 引き渡し
   const zone = G.phase === 'outbound' ? TERM_ZONE : VLCC_ZONE;
@@ -1263,37 +1294,37 @@ function rules(dt) {
   if (working && (G.phase === 'return' || G.phase === 'outbound')) {
     G.progress += dt / need;
     $('progress').style.display = 'block';
-    $('progLabel').textContent = G.phase === 'outbound' ? '原油積み込み中…' : 'VLCCへ原油を引き渡し中…';
+    $('progLabel').textContent = G.phase === 'outbound' ? T('prog.loading') : T('prog.transfer');
     $('progBar').style.width = (G.progress * 100) + '%';
     if (G.progress >= 1) {
       G.progress = 0;
       if (G.phase === 'outbound') {
         G.phase = 'return'; G.loaded = true; updateButtons();
         boats.forEach((b) => { b.state = 'return'; b.cool = 0; b.warned = false; b.alert = 0; });
-        showMsg('原油満載！ VLCCへ帰還せよ\n船が重くなり、操船が鈍くなった', '#ffd36a', 3.2);
+        showMsg(T('msg.loaded'), '#ffd36a', 3.2);
         beep(520, 0.2, 0.08, 'triangle');
       } else { $('progress').style.display = 'none'; stageClear(); return; }
     }
   } else {
     $('progress').style.display = nearZone ? 'block' : 'none';
-    if (nearZone) { $('progLabel').textContent = `減速せよ（${Math.round(C.DOCK_MAX_SPEED * 0.75)}kt未満で作業開始）`; $('progBar').style.width = (G.progress * 100) + '%'; }
+    if (nearZone) { $('progLabel').textContent = T('prog.slow', { kt: Math.round(C.DOCK_MAX_SPEED * 0.75) }); $('progBar').style.width = (G.progress * 100) + '%'; }
   }
   // 不審停止
   const atDock = inZone(TERM_ZONE) || inZone(VLCC_ZONE);
   if (sp < 2.5 && !atDock && !S.grounded) {
     G.stopTimer += dt;
-    if (G.stopTimer >= C.COSTS.STOP_GRACE_SEC) { G.stopTimer = 0; charge(C.COSTS.STOP_PENALTY, '不審停止ペナルティ', 'penalty'); }
+    if (G.stopTimer >= C.COSTS.STOP_GRACE_SEC) { G.stopTimer = 0; charge(C.COSTS.STOP_PENALTY, T('charge.stop'), 'penalty'); }
   } else G.stopTimer = 0;
   // ダッシュ燃料費（ダッシュ中だけ一定時間ごとに加算）
   if (G.dash && G.throttle > 0) {
     G.fuelT += dt;
-    if (G.fuelT >= C.DASH_FUEL.INTERVAL_SEC) { G.fuelT -= C.DASH_FUEL.INTERVAL_SEC; charge(C.DASH_FUEL.COST, '燃料費（ダッシュ）', 'fuel'); }
+    if (G.fuelT >= C.DASH_FUEL.INTERVAL_SEC) { G.fuelT -= C.DASH_FUEL.INTERVAL_SEC; charge(C.DASH_FUEL.COST, T('charge.fuel'), 'fuel'); }
   }
   // イラン側領海接近
   G.inIran = S.x > iranShore(S.z) - MAP.IRAN_WATERS && Math.abs(S.z) < 850 * L;
   if (G.inIran) {
     G.iranT += dt;
-    if (G.iranT >= C.COSTS.IRAN_WATERS_INTERVAL) { G.iranT = 0; charge(C.COSTS.IRAN_WATERS_PENALTY, '危険海域航行ペナルティ', 'penalty'); }
+    if (G.iranT >= C.COSTS.IRAN_WATERS_INTERVAL) { G.iranT = 0; charge(C.COSTS.IRAN_WATERS_PENALTY, T('charge.iran'), 'penalty'); }
   } else G.iranT = 0;
   // GPS妨害
   if (P.gpsJam) {
@@ -1345,7 +1376,7 @@ function updateBoats(dt) {
     const canChase = b.alert >= 1 && b.cool <= 0 && active && chasers() < P.maxChasers;
     const startChase = () => {
       b.state = 'chase'; b.chaseT = 0; b.fireCd = 1.5;
-      if (!G.boatAlert || Math.random() < 0.5) showMsg('⚠ 武装小型艇に発見された！', '#ff9a6a', 1.8);
+      if (!G.boatAlert || Math.random() < 0.5) showMsg(T('msg.spotted'), '#ff9a6a', 1.8);
       G.boatAlert = true;
     };
     let tx, tz, spd;
@@ -1377,7 +1408,7 @@ function updateBoats(dt) {
       if (dist < 150 && b.fireCd <= 0 && b.burstLeft <= 0) {
         b.burstLeft = P.boatBurst; b.burstT = 0; b.fireCd = P.boatCooldown + rand(0, 1.2);
         b.warnBurst = P.warningShots && !b.warned; b.warned = true;
-        if (b.warnBurst) showMsg('⚠ 警告射撃！', '#ffd36a', 1.6);
+        if (b.warnBurst) showMsg(T('msg.warnShots'), '#ffd36a', 1.6);
       }
     } else {
       tx = b.homeX; tz = b.homeZ; spd = P.boatSpeed * 0.7;
@@ -1449,15 +1480,15 @@ function updateBullets(dt) {
 function gunHit(p) {
   G.gunHits++;
   const cost = Math.min(C.COSTS.GUN_REPAIR_MAX, C.COSTS.GUN_REPAIR_BASE + C.COSTS.GUN_REPAIR_STEP * (G.gunHits - 1));
-  charge(cost, '船体修理費', 'repair');
+  charge(cost, T('charge.gunRepair'), 'repair');
   damageHull(C.HULL_DAMAGE.GUN);
   for (let i = 0; i < 5; i++) spawn({ pos: p.clone(), vel: new THREE.Vector3(rand(-8, 8), rand(2, 10), rand(-8, 8)), color: 0xffd080, size: 0.3, life: 0.35, grav: 20 });
   beep(1400, 0.05, 0.05, 'square');
   shake(0.25);
   if (G.gunHits % C.COSTS.HITS_PER_INJURY === 0 && G.crewInjured < C.CREW_TOTAL && !invincible()) {
     G.crewInjured++;
-    charge(C.COSTS.INJURY_BASE + C.COSTS.INJURY_STEP * (G.crewInjured - 1), '乗組員負傷補償', 'injury');
-    showMsg(`乗組員が負傷！（負傷者 ${G.crewInjured}名）`, '#ff6b5e', 2);
+    charge(C.COSTS.INJURY_BASE + C.COSTS.INJURY_STEP * (G.crewInjured - 1), T('charge.injury'), 'injury');
+    showMsg(T('msg.injured', { n: G.crewInjured }), '#ff6b5e', 2);
   }
 }
 
@@ -1522,19 +1553,19 @@ function droneHit(p) {
   if (!invincible()) G.droneDmg += 1 / limit;
   if (G.loaded) {
     explosion(p.x, 4, p.z, 1.8, true);
-    charge(C.COSTS.DRONE_REPAIR_LOADED, 'ドローン被弾 船体修理費', 'repair');
-    charge(C.COSTS.DRONE_CARGO_FIRE, '火災消火・積荷損失', 'minor');
+    charge(C.COSTS.DRONE_REPAIR_LOADED, T('charge.droneRepair'), 'repair');
+    charge(C.COSTS.DRONE_CARGO_FIRE, T('charge.cargoFire'), 'minor');
     damageHull(C.HULL_DAMAGE.DRONE_LOADED);
     noise(1.2, 0.5, 500);
     shake(2.5);
   } else {
     explosion(p.x, 3, p.z, 1.1);
-    charge(C.COSTS.DRONE_REPAIR_EMPTY, 'ドローン被弾 船体修理費', 'repair');
+    charge(C.COSTS.DRONE_REPAIR_EMPTY, T('charge.droneRepair'), 'repair');
     damageHull(C.HULL_DAMAGE.DRONE_EMPTY);
     noise(0.8, 0.4, 700);
   }
   if (G.droneDmg >= 0.999) { gameOver(G.loaded ? 'drone_loaded' : 'drone_empty'); return; }
-  showMsg(G.loaded ? `自爆ドローン被弾！ 積荷が炎上！\n残り耐久：あと${dronesLeft()}発` : `自爆ドローン被弾！\n残り耐久：あと${dronesLeft()}発`, '#ff6b5e', 2.2);
+  showMsg(T(G.loaded ? 'msg.droneLoaded' : 'msg.droneEmpty', { n: dronesLeft() }), '#ff6b5e', 2.2);
 }
 function dronesLeft() { const per = 1 / (G.loaded ? C.DRONE_LIMIT_LOADED : C.DRONE_LIMIT_EMPTY); return Math.max(0, Math.ceil((1 - G.droneDmg) / per - 1e-6)); }
 
@@ -1559,7 +1590,7 @@ function updateMissiles(dt) {
       scene.add(ring);
       missiles.push({ mesh: m, ring, launch, aim, t: 0, T, prev: launch.clone(), warnR });
       explosion(launch.x, launch.y, launch.z, 0.6);
-      showMsg('⚠ ミサイル警報！\n赤い円から離れろ！', '#ff3020', 2.2);
+      showMsg(T('msg.missile'), '#ff3020', 2.2);
       for (let k = 0; k < 3; k++) setTimeout(() => beep(1200, 0.15, 0.07, 'square'), k * 220);
     }
   }
@@ -1578,7 +1609,7 @@ function updateMissiles(dt) {
     if (u >= 1) {
       scene.remove(ms.mesh); scene.remove(ms.ring); missiles.splice(i, 1);
       if (shipDist(ms.aim.x, ms.aim.z) < C.MISSILE_HIT_RADIUS) {
-        if (invincible()) { explosion(ms.aim.x, 3, ms.aim.z, 2.4, true); showMsg('ミサイル直撃！（無敵：ノーダメージ）', '#9fd8ff', 1.6); continue; }
+        if (invincible()) { explosion(ms.aim.x, 3, ms.aim.z, 2.4, true); showMsg(T('msg.missileInvincible'), '#9fd8ff', 1.6); continue; }
         gameOver('missile'); return;
       }
       explosion(ms.aim.x, 1, ms.aim.z, 2.4); noise(1.2, 0.45, 500);
@@ -1649,62 +1680,62 @@ const warnEl = $('warn');
 function updateHud() {
   const S = G.ship, sp = shipSpeed();
   $('hStage').textContent = `${Math.min(G.stage, 99)} / ${C.STAGE_COUNT}`;
-  $('hCargo').textContent = G.loaded ? '原油満載' : '空荷';
+  $('hCargo').textContent = G.loaded ? T('hud.loaded') : T('hud.empty');
   $('hCargo').style.color = G.loaded ? '#ffb070' : '#e8f0f4';
   $('hHull').textContent = Math.ceil(G.hull) + '%';
   $('hHullBar').style.width = G.hull + '%';
   $('hHullBar').style.background = G.hull > 60 ? '#5fd17a' : G.hull > 30 ? '#f2c14e' : '#ff5a4a';
   const limit = G.loaded ? C.DRONE_LIMIT_LOADED : C.DRONE_LIMIT_EMPTY;
-  $('hDrone').textContent = `${G.droneHits || 0}回 / 上限${limit}（あと${dronesLeft()}）`;
+  $('hDrone').textContent = T('hud.drone', { hits: G.droneHits || 0, limit, left: dronesLeft() });
   $('hDroneBar').style.width = Math.min(100, (G.droneDmg || 0) * 100) + '%';
-  $('hGun').textContent = `${G.gunHits || 0}発`;
-  $('hCrew').textContent = `負傷 ${G.crewInjured || 0} / ${C.CREW_TOTAL}名`;
+  $('hGun').textContent = T('hud.gun', { n: G.gunHits || 0 });
+  $('hCrew').textContent = T('hud.crew', { n: G.crewInjured || 0, total: C.CREW_TOTAL });
   $('hCrew').style.color = G.crewInjured ? '#ff8a7a' : '#e8f0f4';
   const ex = G.exposure == null ? 1 : G.exposure;
-  const exLv = ex < 0.3 ? ['低（隠密）', '#7ee08a'] : ex < 0.8 ? ['中', '#f2c14e'] : ['高', '#ff8a7a'];
-  $('hExpo').textContent = exLv[0] + (G.omanSide ? '・オマーン側' : '');
+  const exLv = ex < 0.3 ? ['hud.expoLow', '#7ee08a'] : ex < 0.8 ? ['hud.expoMid', '#f2c14e'] : ['hud.expoHigh', '#ff8a7a'];
+  $('hExpo').textContent = T(exLv[0]) + (G.omanSide ? T('hud.omanSide') : '');
   $('hExpo').style.color = exLv[1];
-  const eng = S.grounded ? '座礁中（出力制限）' : G.throttle === 0 ? '正常（停止）' : G.dash ? '正常（ダッシュ）' : G.throttle === 1 ? '正常（半速）' : '正常（通常）';
-  $('hEngine').textContent = eng;
+  const eng = S.grounded ? 'eng.grounded' : G.throttle === 0 ? 'eng.stop' : G.dash ? 'eng.dash' : G.throttle === 1 ? 'eng.half' : 'eng.normal';
+  $('hEngine').textContent = T(eng);
   $('hSpeed').textContent = (sp * 0.75).toFixed(1) + ' kt';
   const rd = S.rudder, rp = Math.abs(rd) / C.STEERING.MAX_RUDDER_DEG * 50;
-  $('hRudder').textContent = Math.abs(rd) < 0.5 ? '中央' : `${rd > 0 ? '左' : '右'} ${Math.round(Math.abs(rd))}°`;
+  $('hRudder').textContent = Math.abs(rd) < 0.5 ? T('hud.rudderCenter') : T(rd > 0 ? 'hud.rudderLeft' : 'hud.rudderRight', { deg: Math.round(Math.abs(rd)) });
   $('hRudBar').style.left = (rd > 0 ? 50 - rp : 50) + '%';
   $('hRudBar').style.width = rp + '%';
   $('hPending').textContent = fmtUSD(G.pending);
   $('hPending').className = 'big ' + (G.pending >= 0 ? 'pos' : 'neg');
   $('hLoss').textContent = '-' + fmtUSD(G.losses);
   $('hBanked').textContent = fmtUSD(G.banked);
-  $('hObjective').textContent = G.phase === 'outbound' ? '目的：原油ターミナルで原油を積み込め' : '目的：VLCCへ帰還し、原油を引き渡せ';
+  $('hObjective').textContent = G.phase === 'outbound' ? T('obj.outbound') : T('obj.return');
   const dest = G.phase === 'outbound' ? TERM_ZONE : VLCC_ZONE;
   const jam = G.gpsJam > 0;
   if (G.gps) {
     $('hGps').style.display = 'block';
     const rel = wrapAngle(Math.atan2(dest.x - S.x, dest.z - S.z) - S.heading) + (jam ? rand(-3, 3) : 0);
     $('gpsArrow').style.transform = `rotate(${-rel}rad)`;
-    $('hDist').textContent = jam ? 'GPS妨害中 ---- m' : `${G.phase === 'outbound' ? 'ターミナル' : 'VLCC'}まで ${Math.round(Math.hypot(dest.x - S.x, dest.z - S.z) * 10).toLocaleString()} m`;
+    $('hDist').textContent = jam ? T('hud.gpsJam') : T(G.phase === 'outbound' ? 'hud.distTerm' : 'hud.distVlcc', { d: Math.round(Math.hypot(dest.x - S.x, dest.z - S.z) * 10).toLocaleString() });
   } else $('hGps').style.display = 'none';
   // 警告
   const w = [];
-  if (missiles.length) w.push('⚠ ミサイル接近 — 赤い円から離れろ');
-  if (drones.length) w.push(`⚠ 自爆ドローン接近（${drones.length}機）— 方位 ${relDir(drones[0].pos)}`);
-  if (boats.some((b) => b.state === 'chase')) w.push('⚠ 武装小型艇に追跡されている');
-  else if (boats.some((b) => b.state === 'search')) w.push('⚠ 武装小型艇が警戒している（まだ発見されていない）');
-  if (G.inIran) w.push('⚠ イラン側領海に接近中 — 危険海域ペナルティ');
-  if (S.grounded) w.push('⚠ 浅瀬に乗り上げている！');
-  if (G.stopTimer > 1.5) w.push(`停船中：あと${Math.ceil(C.COSTS.STOP_GRACE_SEC - G.stopTimer)}秒で不審停止ペナルティ`);
-  if (jam) w.push('📡 GPS妨害を受けている');
+  if (missiles.length) w.push(T('warn.missile'));
+  if (drones.length) w.push(T('warn.drone', { n: drones.length, dir: relDir(drones[0].pos) }));
+  if (boats.some((b) => b.state === 'chase')) w.push(T('warn.chase'));
+  else if (boats.some((b) => b.state === 'search')) w.push(T('warn.search'));
+  if (G.inIran) w.push(T('warn.iran'));
+  if (S.grounded) w.push(T('warn.shoal'));
+  if (G.stopTimer > 1.5) w.push(T('warn.stop', { s: Math.ceil(C.COSTS.STOP_GRACE_SEC - G.stopTimer) }));
+  if (jam) w.push(T('warn.jam'));
   const info = [];
-  if (G.phase === 'outbound' && !G.cancelLocked && G.stage < 11) info.push('海峡入口までは契約破棄が可能');
+  if (G.phase === 'outbound' && !G.cancelLocked && G.stage < 11) info.push(T('info.cancel'));
   warnEl.innerHTML = w.map((t) => `<div>${t}</div>`).join('') + info.map((t) => `<div class="info">${t}</div>`).join('');
 }
 function relDir(p) {
   const S = G.ship;
   const rel = wrapAngle(Math.atan2(p.x - S.x, p.z - S.z) - S.heading);
   const a = Math.abs(rel);
-  if (a < 0.6) return '前方';
-  if (a > 2.5) return '後方';
-  return rel > 0 ? '左舷' : '右舷';
+  if (a < 0.6) return T('dir.front');
+  if (a > 2.5) return T('dir.back');
+  return rel > 0 ? T('dir.port') : T('dir.starboard');
 }
 
 // ミニマップ
@@ -1875,8 +1906,8 @@ function updateStage11(dt) {
 // 高評価ルート：緊急無線 → 停戦合意 → 静かな航海 → ゆっくり暗転 → ゲームクリア
 function updateLegendFinal(dt) {
   const s = G.s11, LG = C.STAGE11.LEGEND;
-  const D = window.DIALOGUES || {};
-  const lines = textLines(D.STAGE11_LEGEND_RADIO, ['関係各国による停戦合意が成立した。']);
+  const { cur, ja } = I18N.dialogues();
+  const lines = textLines(cur.STAGE11_LEGEND_RADIO, textLines(ja.STAGE11_LEGEND_RADIO, [T('dlg.legendFallback')]));
   const once = (key, t, fn) => { if (s.t >= t && !s[key]) { s[key] = true; fn(); } };
   // 1. 着信音と「緊急無線 受信中」
   once('ring', 0, () => {
@@ -1908,7 +1939,7 @@ function updateLegendFinal(dt) {
 // 通常ルート：緊急警報 → 間 → 閃光 → 大量破壊兵器と衝撃波（既存演出）→ ゲームオーバー
 function updateNormalFinal(dt) {
   const s = G.s11, S = G.ship, NM = C.STAGE11.NORMAL;
-  const D = window.DIALOGUES || {};
+  const { cur, ja } = I18N.dialogues();
   const W = $('whiteout');
   const BX = s.blastX, BZ = s.blastZ, F = NM.FLASH_AT_SEC;
   const once = (key, t, fn) => { if (s.t >= t && !s[key]) { s[key] = true; fn(); } };
@@ -1916,7 +1947,7 @@ function updateNormalFinal(dt) {
   once('alarm', 0, () => {
     for (let k = 0; k < 4; k++) setTimeout(() => beep(1180, 0.16, 0.08, 'square'), k * 260);
     $('alertFrame').style.display = 'block';
-    $('alertText').textContent = textLines(D.STAGE11_NORMAL_ALERT, ['緊急警報！']).join('\n');
+    $('alertText').textContent = textLines(cur.STAGE11_NORMAL_ALERT, textLines(ja.STAGE11_NORMAL_ALERT, [T('dlg.alertFallback')])).join('\n');
     $('alertText').style.display = 'block';
   });
   once('alarmOff', NM.ALERT_SEC, () => { $('alertText').style.display = 'none'; $('alertFrame').style.display = 'none'; });
@@ -1965,7 +1996,7 @@ function updateNormalFinal(dt) {
   // 5. 通信途絶 → ゲームオーバー画面
   if (s.hitWave) {
     s.after = (s.after || 0) + dt;
-    if (s.after > 2.2 && !s.text) { s.text = true; W.style.color = '#666'; W.textContent = '— 通信途絶 —'; }
+    if (s.after > 2.2 && !s.text) { s.text = true; W.style.color = '#666'; W.textContent = T('radio.lost'); }
     if (s.after > NM.AFTER_WAVE_SEC && !s.ended) { s.ended = true; cleanupBlast(); W.style.transition = 'opacity 0.2s'; endGame('stage11'); }
   }
 }

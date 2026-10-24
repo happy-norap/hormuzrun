@@ -104,6 +104,15 @@
   .soundPanel .hint { font-size: 11px; width: 100%; text-align: center; }
   .soundPanel input[type=range] { width: 110px; accent-color: #ffd36a; cursor: pointer; }
   .btn.mini { min-width: 48px; padding: 4px 8px; font-size: 12px; }
+  /* ---- 言語選択（タイトル画面） ---- */
+  .langPanel { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin: -8px -12px 4px 0; }
+  .langPanel .lbl { font-size: 14px; }
+  .langPanel .btn.mini { min-width: 0; padding: 4px 9px; }
+  /* 中国語（簡体字）は簡体字用の書体を優先し、日本語の字形にならないようにする。ベトナム語の声調記号は Segoe UI などで表示 */
+  html[lang="zh-CN"] body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", sans-serif; }
+  html[lang="vi"] body, html[lang="en"] body { font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif; }
+  .langPanel [lang="zh-CN"] { font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; }
+  .langPanel [lang="ja"] { font-family: "Hiragino Kaku Gothic ProN", "Meiryo", "Yu Gothic", sans-serif; }
   /* ---- 第11ステージの最終イベント ---- */
   #hud, #labels { transition: opacity 1.8s; }
   #alertFrame { position: fixed; inset: 0; pointer-events: none; z-index: 12; display: none; box-shadow: inset 0 0 90px 30px rgba(255, 20, 10, 0.75); animation: alertPulse 0.5s infinite alternate; }
@@ -193,6 +202,8 @@
     html.touch .titleName { font-size: 22px; margin: 6px 0; }
     html.touch .card.legend .titleName { font-size: 26px; }
     html.touch .catch { font-size: 14px; }
+    html.touch .card .langPanel { margin: -4px -6px 2px 0; }
+    html.touch .card .langPanel .btn { font-size: 12px; padding: 7px 10px; min-width: 0; }
     html.touch .soundPanel { margin-top: 8px; padding: 6px; }
     html.touch .soundPanel input[type=range] { width: 120px; height: 28px; }
   }
@@ -204,29 +215,29 @@
 
 <div id="hud">
   <div id="status" class="panel hudp">
-    <div class="row"><span class="lbl">ステージ</span><span id="hStage" class="big">1 / 10</span></div>
-    <div class="row"><span class="lbl">積荷</span><span id="hCargo">空荷</span></div>
-    <div class="row"><span class="lbl">船体状態</span><span id="hHull">100%</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.stage">ステージ</span><span id="hStage" class="big">1 / 10</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.cargo">積荷</span><span id="hCargo">空荷</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.hull">船体状態</span><span id="hHull">100%</span></div>
     <div class="bar"><div id="hHullBar" style="width:100%"></div></div>
-    <div class="row"><span class="lbl">ドローン被弾</span><span id="hDrone">0回</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.drone">ドローン被弾</span><span id="hDrone">0回</span></div>
     <div class="bar"><div id="hDroneBar" style="width:0%; background:#ff7a4a"></div></div>
-    <div class="row opt"><span class="lbl">銃撃被弾</span><span id="hGun">0発</span></div>
-    <div class="row"><span class="lbl">乗組員</span><span id="hCrew">負傷 0 / 18名</span></div>
-    <div class="row opt"><span class="lbl">機関状態</span><span id="hEngine">正常</span></div>
-    <div class="row"><span class="lbl">速力</span><span id="hSpeed">0 kt</span></div>
-    <div class="row"><span class="lbl">被発見リスク</span><span id="hExpo">—</span></div>
-    <div class="row"><span class="lbl">舵角<span class="pcOnly" style="display:inline"> (A/D)</span></span><span id="hRudder">中央</span></div>
+    <div class="row opt"><span class="lbl" data-i18n="hud.lbl.gun">銃撃被弾</span><span id="hGun">0発</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.crew">乗組員</span><span id="hCrew">負傷 0 / 18名</span></div>
+    <div class="row opt"><span class="lbl" data-i18n="hud.lbl.engine">機関状態</span><span id="hEngine">正常</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.speed">速力</span><span id="hSpeed">0 kt</span></div>
+    <div class="row"><span class="lbl" data-i18n="hud.lbl.expo">被発見リスク</span><span id="hExpo">—</span></div>
+    <div class="row"><span class="lbl"><span data-i18n="hud.lbl.rudder">舵角</span><span class="pcOnly" style="display:inline"> (A/D)</span></span><span id="hRudder">中央</span></div>
     <div class="rud"><div id="hRudBar"></div><span class="mid"></span></div>
   </div>
   <div id="money" class="panel">
-    <div class="lbl">未清算の契約報酬</div>
+    <div class="lbl" data-i18n="hud.lbl.pending">未清算の契約報酬</div>
     <div id="hPending" class="big pos">$3,000,000</div>
-    <div class="row" style="justify-content:flex-end"><span class="lbl">今回の損失&nbsp;</span><span id="hLoss" class="neg">$0</span></div>
-    <div class="lbl" style="margin-top:6px">清算済み累計スコア</div>
+    <div class="row" style="justify-content:flex-end"><span class="lbl"><span data-i18n="hud.lbl.loss">今回の損失</span>&nbsp;</span><span id="hLoss" class="neg">$0</span></div>
+    <div class="lbl" style="margin-top:6px" data-i18n="common.banked">清算済み累計スコア</div>
     <div id="hBanked" class="big">$0</div>
   </div>
   <div id="objective" class="panel">
-    <div id="hObjective" style="font-weight:700">目的：原油ターミナルへ向かえ</div>
+    <div id="hObjective" style="font-weight:700" data-i18n="obj.default">目的：原油ターミナルへ向かえ</div>
     <div id="hGps" style="margin-top:4px">
       <svg id="gpsArrow" viewBox="0 0 40 40"><polygon points="20,3 32,34 20,26 8,34" fill="#ffd36a" stroke="#000" stroke-width="1"/></svg>
       <span id="hDist">--</span>
@@ -234,55 +245,61 @@
   </div>
   <div id="warn"></div>
   <div id="costs"></div>
-  <div id="progress" class="panel"><div id="progLabel">原油積み込み中…</div><div class="bar"><div id="progBar" style="width:0%"></div></div></div>
+  <div id="progress" class="panel"><div id="progLabel" data-i18n="prog.loading">原油積み込み中…</div><div class="bar"><div id="progBar" style="width:0%"></div></div></div>
   <div id="controls">
-    <div><div class="ctlLabel">スロットル (W/S)</div>
+    <div><div class="ctlLabel" data-i18n="ctl.throttle">スロットル (W/S)</div>
       <div class="seg">
-        <button class="btn" data-throttle="0">停止</button>
-        <button class="btn" data-throttle="1">半速</button>
-        <button class="btn on" data-throttle="2">通常</button>
+        <button class="btn" data-throttle="0" data-i18n="thr.0">停止</button>
+        <button class="btn" data-throttle="1" data-i18n="thr.1">半速</button>
+        <button class="btn on" data-throttle="2" data-i18n="thr.2">通常</button>
       </div></div>
-    <div><div class="ctlLabel">ダッシュ (Space)</div><button id="btnDash" class="btn dash">DASH OFF</button></div>
+    <div><div class="ctlLabel" data-i18n="ctl.dash">ダッシュ (Space)</div><button id="btnDash" class="btn dash">DASH OFF</button></div>
     <div><div class="ctlLabel">GPS (G)</div><button id="btnGps" class="btn on">GPS ON</button></div>
-    <div><div class="ctlLabel">海峡進入前のみ</div><button id="btnCancel" class="btn danger">契約破棄</button></div>
+    <div><div class="ctlLabel" data-i18n="ctl.cancelOnly">海峡進入前のみ</div><button id="btnCancel" class="btn danger" data-i18n="btn.cancel">契約破棄</button></div>
   </div>
   <canvas id="minimap" width="130" height="230"></canvas>
-  <div id="pauseHint">P / Esc：一時停止</div>
+  <div id="pauseHint" data-i18n="hint.pause">P / Esc：一時停止</div>
   <!-- スマートフォン用タッチ操作（PCでは表示されない） -->
   <div id="touchUI">
     <div id="tcLeft">
-      <button class="tbtn" data-hold="left" aria-label="左に舵を切る">◀</button>
-      <button class="tbtn" data-hold="right" aria-label="右に舵を切る">▶</button>
+      <button class="tbtn" data-hold="left" aria-label="左に舵を切る" data-i18n-aria="touch.leftAria">◀</button>
+      <button class="tbtn" data-hold="right" aria-label="右に舵を切る" data-i18n-aria="touch.rightAria">▶</button>
     </div>
     <div id="tcRight">
       <div class="tcol">
-        <button class="tbtn" data-tap="up" aria-label="加速">▲<small>加速</small></button>
-        <div id="tThr">通常</div>
-        <button class="tbtn" data-tap="down" aria-label="減速">▼<small>減速</small></button>
+        <button class="tbtn" data-tap="up" aria-label="加速" data-i18n-aria="touch.accel">▲<small data-i18n="touch.accel">加速</small></button>
+        <div id="tThr" data-i18n="thr.2">通常</div>
+        <button class="tbtn" data-tap="down" aria-label="減速" data-i18n-aria="touch.decel">▼<small data-i18n="touch.decel">減速</small></button>
       </div>
       <div class="tcol">
         <button class="tbtn" id="tDash" data-tap="dash">DASH</button>
         <button class="tbtn" id="tGps" data-tap="gps">GPS</button>
       </div>
     </div>
-    <button class="tbtn" id="tCancel" data-tap="cancel">契約破棄<small>海峡入口まで</small></button>
-    <div id="tcTop"><button class="tbtn" id="tPause" data-tap="pause" aria-label="一時停止">II</button></div>
+    <button class="tbtn" id="tCancel" data-tap="cancel"><span data-i18n="touch.cancel">契約破棄</span><small data-i18n="touch.cancelSub">海峡入口まで</small></button>
+    <div id="tcTop"><button class="tbtn" id="tPause" data-tap="pause" aria-label="一時停止" data-i18n-aria="touch.pauseAria">II</button></div>
   </div>
 </div>
 <div id="msg"></div>
 <div id="whiteout"></div>
 <div id="alertFrame"></div>
 <div id="alertText"></div>
-<div id="radio"><div class="head"><span class="dot"></span>緊急無線 受信中</div><div id="radioLines"></div></div>
+<div id="radio"><div class="head"><span class="dot"></span><span data-i18n="radio.head">緊急無線 受信中</span></div><div id="radioLines"></div></div>
 <div id="fade"></div>
 <div id="overlay"></div>
-<div id="rotate"><div class="icon">📱</div><p>スマートフォンを<b>横向き</b>にしてプレイしてください</p></div>
+<div id="rotate"><div class="icon">📱</div><p data-i18n-html="rotate.msg">スマートフォンを<b>横向き</b>にしてプレイしてください</p></div>
 
 <!-- Three.js (CDN) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="config.js"></script>
 <script src="dialogues.js"></script>
 <script src="bgm_config.js"></script>
+<!-- 多言語対応：言語ファイル（lang フォルダ）と切り替え処理。言語を増やすときはここに1行追加 -->
+<script src="lang/ja.js"></script>
+<script src="lang/en.js"></script>
+<script src="lang/zh-CN.js"></script>
+<script src="lang/vi.js"></script>
+<script src="i18n.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
