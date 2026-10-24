@@ -449,7 +449,7 @@ window.addEventListener('click', unlockAudio, true);
 // 今の場面に合うBGMを選ぶ（場面と曲の対応は bgm_config.js）
 function bgmSceneFor() {
   switch (G.mode) {
-    case 'title': case 'intro': case 'captain': return 'TITLE';
+    case 'title': case 'intro': case 'captain': case 'confirmNew': return 'TITLE';
     case 'play': case 'paused': case 'confirm': return G.stage >= 11 ? 'STAGE11' : (G.loaded ? 'VOYAGE_LOADED' : 'VOYAGE');
     case 'dying': return 'SINKING';
     case 'stage11': {
@@ -664,6 +664,9 @@ $('overlay').addEventListener('click', (e) => {
   if (act === 'quit') { quitGame(); return; }
   ac();
   if (act === 'start') { newGame(); }
+  else if (act === 'continue') { continueGame(); }
+  else if (act === 'newYes') { startFresh(); }
+  else if (act === 'retry') { retryStage(); }
   else if (act === 'sail') { beginSail(); }
   else if (act === 'next') { G.stage++; showIntro(); }
   else if (act === 'retreat') { endGame('retreat'); }
@@ -671,6 +674,86 @@ $('overlay').addEventListener('click', (e) => {
   else if (act === 'cancelNo' || act === 'resume') { hideOverlay(); G.mode = 'play'; }
   else if (act === 'title') { showTitle(); }
 });
+
+// ---------------------------------------------------------------- save（コンティニュー）
+// ステージをクリアするたびに、ブラウザ内（localStorage）へ進行状況を自動保存する。
+// 失敗しても累計スコアは失われず、失敗したステージの開始時点から再挑戦できる。
+// 保存できない環境でもゲームは遊べる（その場合は再挑戦だけが使え、再読み込みすると最初から）。
+const SAVE_VERSION = 1;
+let SAVE_KEY = 'hormuz_save_v1';
+const save = {
+  // 読み込み結果：status は none（なし）/ ok / corrupt（壊れている）/ old（形式が違う）/ unavailable（保存不可の環境）
+  read() {
+    let raw;
+    try { raw = window.localStorage.getItem(SAVE_KEY); } catch (e) { return { status: 'unavailable' }; }
+    if (raw == null) return { status: 'none' };
+    try {
+      const d = JSON.parse(raw);
+      if (!d || typeof d !== 'object') return { status: 'corrupt' };
+      if (d.version !== SAVE_VERSION) return { status: 'old' };
+      const valid = Number.isInteger(d.cleared) && d.cleared >= 0 && d.cleared <= C.STAGE_COUNT &&
+        Number.isInteger(d.nextStage) && d.nextStage >= 1 && d.nextStage <= C.STAGE_COUNT + 1 &&
+        typeof d.banked === 'number' && isFinite(d.banked) && Array.isArray(d.history);
+      if (!valid) return { status: 'corrupt' };
+      d.history = d.history.filter((h) => h && Number.isInteger(h.stage) && typeof h.pnl === 'number' && isFinite(h.pnl))
+        .map((h) => ({ stage: h.stage, pnl: h.pnl, note: String(h.note || '清算').slice(0, 10) }));
+      return { status: 'ok', data: d };
+    } catch (e) { return { status: 'corrupt' }; }
+  },
+  // 確定した状態だけを書く（途中の報酬・減点は保存しない）
+  write(nextStage, completed) {
+    const d = {
+      version: SAVE_VERSION, nextStage, cleared: G.cleared, banked: G.banked,
+      history: G.history.filter((h) => h.note !== '失敗').map((h) => ({ stage: h.stage, pnl: h.pnl, note: h.note })),
+      completed: !!completed, savedAt: new Date().toISOString(),
+    };
+    try { window.localStorage.setItem(SAVE_KEY, JSON.stringify(d)); return true; } catch (e) { return false; }
+  },
+  clear() { try { window.localStorage.removeItem(SAVE_KEY); return true; } catch (e) { return false; } },
+};
+// ステージ開始時点の確定状態（再挑戦はここへ戻す。保存できない環境でも使える）
+function snapshotAttempt() { G.attempt = { stage: G.stage, banked: G.banked, cleared: G.cleared, history: G.history.filter((h) => h.note !== '失敗').map((h) => ({ ...h })) }; }
+function retryStage() {
+  const a = G.attempt;
+  if (!a) { continueGame(); return; }
+  Object.assign(G, { stage: a.stage, banked: a.banked, cleared: a.cleared, history: a.history.map((h) => ({ ...h })) });
+  showIntro();
+}
+function continueGame() {
+  const r = save.read();
+  if (r.status !== 'ok' || r.data.completed) { showTitle(); return; }
+  const d = r.data;
+  Object.assign(G, { stage: d.nextStage, banked: d.banked, cleared: d.cleared, history: d.history });
+  showIntro();
+}
+function startFresh() {
+  save.clear();
+  Object.assign(G, { stage: 1, banked: 0, cleared: 0, history: [] });
+  showIntro();
+}
+// NEW GAME：続きのセーブがあるときは、上書きしてよいか確認する
+function confirmNewGame() {
+  const r = save.read();
+  if (r.status !== 'ok' || r.data.completed) { startFresh(); return; }
+  G.mode = 'confirmNew';
+  overlay(`<div class="card" style="max-width:520px;text-align:center"><h2>NEW GAME</h2>
+    <p>続きのセーブデータ（STAGE ${r.data.nextStage} から・累計 ${fmtUSD(r.data.banked)}）があります。</p>
+    <p>ステージ1から始めると、このセーブデータは<b>削除</b>されます。よろしいですか？</p>
+    <div class="btns"><button class="btn danger" data-act="newYes">削除して最初から始める</button><button class="btn" data-act="title">やめる</button></div></div>`);
+}
+
+// タイトル画面のボタン（セーブがあれば CONTINUE を表示）
+function titleButtonsHtml() {
+  const r = save.read();
+  let note = '';
+  if (r.status === 'corrupt' || r.status === 'old') note = '<p class="sub saveNote">⚠ セーブデータを読み込めなかったため、続きから再開できません。「世界を救ってみる」で最初から始められます。</p>';
+  if (r.status === 'unavailable') note = '<p class="sub saveNote">⚠ この環境では進行状況を保存できません（ゲームは遊べますが、ページを閉じると最初からになります）。</p>';
+  if (r.status === 'ok' && !r.data.completed) {
+    return `<div class="btns"><button class="btn on" data-act="continue">CONTINUE<span class="btnSub">STAGE ${r.data.nextStage} から ／ 累計 ${fmtUSD(r.data.banked)}</span></button><button class="btn" data-act="start">NEW GAME</button><button class="btn" data-act="quit">他の仕事を探す</button></div>`;
+  }
+  if (r.status === 'ok' && r.data.completed) note = '<p class="sub saveNote">前回の航海は「ホルムズ海峡の伝説」で完結しました。「世界を救ってみる」で新しい航海を始められます。</p>';
+  return `<div class="btns"><button class="btn on" data-act="start">世界を救ってみる</button><button class="btn" data-act="quit">他の仕事を探す</button></div>${note}`;
+}
 
 function showTitle() {
   G.mode = 'title';
@@ -689,7 +772,7 @@ function showTitle() {
       <tr><td>契約報酬（1往復）</td><td>$3,000,000</td></tr>
       <tr><td>被弾・座礁・ペナルティ</td><td>報酬から差し引き</td></tr>
       <tr><td>機雷・ミサイル直撃 / ドローン被弾上限</td><td class="neg">即ゲームオーバー</td></tr>
-      <tr><td>ゲームオーバー時</td><td class="neg">累計報酬は全て失われる</td></tr>
+      <tr><td>ゲームオーバー時</td><td>累計報酬は保持。失敗したステージから再挑戦</td></tr>
       <tr><td>全ステージ</td><td>10</td></tr>
     </table>
     <p><b>稼ぐことより、どこで手を引くかが問われる。</b>契約を終えるたびに、次の仕事を受けるか撤退するかを選べる。</p>
@@ -700,7 +783,7 @@ function showTitle() {
       <b>その他：</b>右下の ▲加速・▼減速、DASH、GPS　上の II で一時停止（横向きでプレイ）<br>
       <b>積み込み／引き渡し：</b>黄色い円の中で ▼ を押して「停止」にする</p>
     ${soundPanelHtml()}
-    <div class="btns"><button class="btn on" data-act="start">世界を救ってみる</button><button class="btn" data-act="quit">他の仕事を探す</button></div>
+    ${titleButtonsHtml()}
   </div>`);
 }
 
@@ -724,10 +807,7 @@ function quitGame() {
   try { window.close(); } catch (e) { /* 閉じられない環境では終了画面のまま */ }
 }
 
-function newGame() {
-  Object.assign(G, { stage: 1, banked: 0, cleared: 0, history: [] });
-  showIntro();
-}
+function newGame() { confirmNewGame(); }
 
 function dangerBar(s) { const n = Math.min(s, 10); return '■'.repeat(n) + '□'.repeat(10 - n); }
 function showIntro() {
@@ -754,7 +834,7 @@ function showIntro() {
       <tr><td>確認された脅威</td><td>${threats.join(' / ')}</td></tr>
     </table>
     <p class="sub">ルート：VLCC出発 → 海峡通過 → 原油ターミナルで積込 → 海峡通過 → VLCCへ帰還<br>
-    海峡入口（黄色いブイ列）を越えるまでは「契約破棄」が可能（違約金 ${fmtUSD(C.CANCEL_PENALTY)}）。</p>
+    海峡入口（黄色いブイ列）を越えるまでは「契約破棄」で今回の航海を中止できる（損益は破棄。CONTINUEで同じステージに再挑戦）。</p>
     <div class="btns"><button class="btn on" data-act="sail">出航</button></div></div>`);
 }
 
@@ -763,6 +843,7 @@ function resetShip() {
 }
 function beginSail() {
   hideOverlay();
+  snapshotAttempt(); // 再挑戦はこの時点（ステージ開始前の確定状態）に戻す
   Object.assign(G, {
     pending: C.CONTRACT_REWARD, losses: 0, lossBy: {}, loaded: false, hull: 100, droneHits: 0, droneDmg: 0,
     gunHits: 0, crewInjured: 0, phase: 'outbound', cancelLocked: false, progress: 0, stopTimer: 0, stopPenT: 0,
@@ -806,6 +887,7 @@ function stageClear() {
   G.banked += G.pending;
   G.cleared++;
   G.history.push({ stage: G.stage, pnl: G.pending, note: '清算' });
+  const saved = save.write(Math.min(G.stage + 1, C.STAGE_COUNT + 1), false); // 次に挑戦するステージを自動保存
   beep(660, 0.15, 0.08, 'triangle'); setTimeout(() => beep(880, 0.25, 0.08, 'triangle'), 160);
   const last = G.stage >= C.STAGE_COUNT;
   const captain = captainLine(G.stage);
@@ -817,7 +899,7 @@ function stageClear() {
       <tr><td>今回の清算額</td><td class="${G.pending >= 0 ? 'pos' : 'neg'}">${fmtUSD(G.pending)}</td></tr>
       <tr><td>清算済み累計スコア</td><td class="pos">${fmtUSD(G.banked)}</td></tr>
     </table>
-    <p class="sub">撤退すれば累計スコアが確定します。次の契約中に沈めば、全てを失います。</p>
+    <p class="sub">${saved ? '💾 進行状況を保存しました。' : '⚠ 進行状況を保存できませんでした（ブラウザの設定で保存が禁止されている可能性があります）。'}次の契約で沈んでも累計スコアは失われず、そのステージから再挑戦できます。</p>
     <div class="btns">
       <button class="btn on" data-act="next">${last ? 'さらに進む' : '次の契約を受ける'}</button>
       <button class="btn" data-act="retreat">仕事を終えて撤退する</button>
@@ -831,21 +913,21 @@ function lossRows() {
 function openCancel() {
   if (G.mode !== 'play' || G.phase !== 'outbound' || G.cancelLocked || G.stage >= 11) return; // 第11ステージは契約破棄不可
   G.mode = 'confirm';
-  const pnl = G.pending - C.CANCEL_PENALTY;
   overlay(`<div class="card"><h2>契約を破棄しますか？</h2>
     <table>
-      <tr><td>未清算の契約報酬</td><td>${fmtUSD(G.pending)}</td></tr>
-      <tr><td>違約金</td><td class="neg">-${fmtUSD(C.CANCEL_PENALTY)}</td></tr>
-      <tr><td>このステージの損益</td><td class="${pnl >= 0 ? 'pos' : 'neg'}">${fmtUSD(pnl)}</td></tr>
-      <tr><td>破棄後の確定スコア</td><td>${fmtUSD(G.banked + pnl)}</td></tr>
+      <tr><td>今回の航海で発生した損益（破棄されます）</td><td class="neg">-${fmtUSD(G.losses)}</td></tr>
+      <tr><td>清算済み累計スコア（変わりません）</td><td>${fmtUSD(G.banked)}</td></tr>
     </table>
-    <p class="sub">契約を破棄すると、その時点で仕事を終えて撤退となります。</p>
-    <div class="btns"><button class="btn danger" data-act="cancelYes">破棄して撤退する</button><button class="btn" data-act="cancelNo">航行を続ける</button></div></div>`);
+    <p class="sub">契約を破棄すると今回の航海を中止します。このステージは未クリアのまま、タイトル画面の「CONTINUE」からステージの最初に再挑戦できます。</p>
+    <div class="btns"><button class="btn danger" data-act="cancelYes">破棄して航海を中止する</button><button class="btn" data-act="cancelNo">航行を続ける</button></div></div>`);
 }
+// 契約破棄：今回の航海を中止する。未確定の損益は破棄し、ステージ開始前の確定状態に戻す（累計は減らさない）。
+// このステージは未クリアのまま保存し、CONTINUE で同じステージの冒頭から再開できるようにする。
 function doCancel() {
-  const pnl = G.pending - C.CANCEL_PENALTY;
-  G.banked += pnl;
-  G.history.push({ stage: G.stage, pnl, note: '契約破棄' });
+  G.cancelledLosses = G.losses;
+  const a = G.attempt;
+  if (a) Object.assign(G, { stage: a.stage, banked: a.banked, cleared: a.cleared, history: a.history.map((h) => ({ ...h })) });
+  G.cancelSaved = save.write(G.stage, false);
   endGame('cancel');
 }
 
@@ -873,20 +955,21 @@ const TITLES = [
 ];
 function endGame(reason) {
   G.resultReason = reason; // BGMの選曲に使う
+  if (reason === 'legend') save.write(Math.min(G.cleared + 1, C.STAGE_COUNT + 1), true); // 高評価ルートでゲームクリア：航海は完結
   G.mode = 'result';
   $('progress').style.display = 'none';
   const legend = reason === 'legend';
   const over = !['retreat', 'cancel', 'legend'].includes(reason);
   const reasonText = {
-    retreat: '自主撤退', cancel: '自主撤退（契約破棄）', mine: '沈没（機雷に接触）', missile: '沈没（ミサイル直撃）',
+    retreat: '自主撤退', cancel: '契約破棄（今回の航海を中止）', mine: '沈没（機雷に接触）', missile: '沈没（ミサイル直撃）',
     drone_empty: '航行不能（自爆ドローン被弾上限）', drone_loaded: '沈没（自爆ドローン被弾・積荷炎上）', hull: '航行不能（船体損傷）',
     collision: '航行不能（高速衝突による船体大破）', stage11: '第11ステージ', legend: 'ゲームクリア（高評価ルート・第11ステージ）',
   }[reason];
-  const finalScore = over ? 0 : G.banked;
+  const finalScore = G.banked; // 失敗しても、それまでの確定スコアは失われない
   let title, comment;
   if (legend) { title = 'ホルムズ海峡の伝説'; comment = '大量破壊兵器は使われなかった。あなたの航海が、この海峡を守り抜いた。'; }
   else if (reason === 'stage11') { title = '強欲の閃光'; comment = '欲張りすぎた。海峡は、もうどこにもない。'; }
-  else if (over) { title = '海の藻屑'; comment = '引き際を見誤った。稼いだ金は、海の底へ。'; }
+  else if (over) { title = '海の藻屑'; comment = '引き際を見誤った。……だが、まだ終わりではない。'; }
   else { for (const t of TITLES) if (finalScore >= t[0]) { title = t[1]; comment = t[2]; } if (finalScore <= 0) { title = TITLES[0][1]; comment = TITLES[0][2]; } }
   const hist = G.history.map((h) => `<tr><td>STAGE ${h.stage}（${h.note}）</td><td class="${h.pnl >= 0 ? 'pos' : 'neg'}">${fmtUSD(h.pnl)}</td></tr>`).join('');
   overlay(`<div class="card${legend ? ' legend' : ''}"><h2>${legend ? 'GAME CLEAR' : (over ? 'GAME OVER' : '航海終了')}</h2>
@@ -899,11 +982,13 @@ function endGame(reason) {
       <tr><td>到達ステージ</td><td>STAGE ${G.stage}</td></tr>
       <tr><td>成功した往復回数</td><td>${G.cleared} 回</td></tr>
       <tr><td>確定スコア</td><td class="${finalScore > 0 ? 'pos' : (finalScore < 0 ? 'neg' : '')}" style="font-size:20px">${fmtUSD(finalScore)}</td></tr>
-      ${over ? `<tr><td>失敗した契約の損益（損害額）</td><td class="neg">${fmtUSD(-G.losses)}</td></tr>
-      <tr><td>参考記録：ゲームオーバー前の累計獲得額</td><td>${fmtUSD(G.banked)}</td></tr>` : ''}
+      ${over ? `<tr><td>失敗した契約の損益（再挑戦で破棄）</td><td class="neg">${fmtUSD(-G.losses)}</td></tr>` : ''}
+      ${reason === 'cancel' ? `<tr><td>中止した航海の損益（破棄・累計に反映しない）</td><td class="neg">${fmtUSD(-(G.cancelledLosses || 0))}</td></tr>` : ''}
     </table>
     ${hist ? `<p class="sub" style="margin-bottom:0">ステージ別損益</p><table>${hist}</table>` : ''}
-    <div class="btns"><button class="btn on" data-act="start">もう一度世界を救う</button><button class="btn" data-act="title">故郷へ帰る</button></div></div>`);
+    ${over ? '<p class="sub" style="text-align:center">累計スコアは保持されます。「再挑戦」でこのステージの開始時点から、もう一度挑めます。</p>' : ''}
+    ${reason === 'cancel' ? `<p class="sub" style="text-align:center">${G.cancelSaved ? `STAGE ${G.stage} は未クリアです。タイトル画面の「CONTINUE」から、このステージの最初に再挑戦できます。` : '⚠ 進行状況を保存できませんでした（この環境ではCONTINUEで再開できません）。'}</p>` : ''}
+    <div class="btns">${over ? '<button class="btn on" data-act="retry">再挑戦（RETRY）</button>' : ''}<button class="btn${over ? '' : ' on'}" data-act="start">もう一度世界を救う</button><button class="btn" data-act="title">故郷へ帰る</button></div></div>`);
 }
 
 // ---------------------------------------------------------------- input
