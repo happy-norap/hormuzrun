@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d1a22">
+<title>ホルムズ海峡を駆け抜けろ！</title>
+<!-- SNSで共有したときのリンクカード（OGP / X Card）。画像は images/ogp.png（1200×630 推奨）を公開先の絶対URLで指定 -->
+<meta name="description" content="小型タンカーで危険な海峡を往復し、契約報酬を稼ぐ3D船舶アクション。稼ぎ続けるか、引き際を見極めるか。ブラウザで遊べます（PC・スマートフォン対応）。">
+<link rel="canonical" href="https://happy-norap.github.io/hormuzrun/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ホルムズ海峡を駆け抜けろ！">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:title" content="ホルムズ海峡を駆け抜けろ！">
+<meta property="og:description" content="小型タンカーで危険な海峡を往復し、契約報酬を稼ぐ3D船舶アクション。稼ぎ続けるか、引き際を見極めるか。ブラウザで遊べます（PC・スマートフォン対応）。">
+<meta property="og:url" content="https://happy-norap.github.io/hormuzrun/">
+<meta property="og:image" content="https://happy-norap.github.io/hormuzrun/images/ogp.png">
+<meta property="og:image:secure_url" content="https://happy-norap.github.io/hormuzrun/images/ogp.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1733">
+<meta property="og:image:height" content="907">
+<meta property="og:image:alt" content="ホルムズ海峡を駆け抜けろ！ — タンカーで危険な海峡を駆け抜ける3D船舶アクション">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ホルムズ海峡を駆け抜けろ！">
+<meta name="twitter:description" content="小型タンカーで危険な海峡を往復し、契約報酬を稼ぐ3D船舶アクション。稼ぎ続けるか、引き際を見極めるか。">
+<meta name="twitter:image" content="https://happy-norap.github.io/hormuzrun/images/ogp.png">
+<meta name="twitter:image:alt" content="ホルムズ海峡を駆け抜けろ！ — タンカーで危険な海峡を駆け抜ける3D船舶アクション">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1a22; font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif; color: #e8f0f4; user-select: none; }
+  #game { position: fixed; inset: 0; }
+  #game canvas { display: block; cursor: crosshair; }
+  .panel { position: fixed; background: rgba(8, 20, 28, 0.72); border: 1px solid rgba(140, 190, 210, 0.35); border-radius: 8px; padding: 10px 12px; font-size: 13px; pointer-events: none; }
+  #hud { display: none; }
+  #status { top: 12px; left: 12px; width: 280px; }
+  #money { top: 12px; right: 12px; width: 270px; text-align: right; }
+  .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; }
+  .lbl { color: #9bb7c4; }
+  .big { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+  .pos { color: #7ee08a; } .neg { color: #ff6b5e; }
+  .bar { height: 8px; background: rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; margin: 2px 0 6px; }
+  .bar > div { height: 100%; background: #5fd17a; transition: width .2s; }
+  #objective { top: 12px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 300px; }
+  #gpsArrow { display: inline-block; width: 34px; height: 34px; vertical-align: middle; transition: transform .1s linear; }
+  #warn { position: fixed; top: 112px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; }
+  #warn div { background: rgba(170, 20, 10, 0.78); border: 1px solid #ff8a7a; padding: 5px 14px; border-radius: 6px; margin: 4px; font-weight: 700; font-size: 15px; animation: blink 0.8s infinite alternate; }
+  #warn div.info { background: rgba(160, 120, 10, 0.78); border-color: #ffd36a; animation: none; }
+  @keyframes blink { from { opacity: 1; } to { opacity: 0.55; } }
+  #msg { position: fixed; top: 34%; left: 50%; transform: translate(-50%, -50%); font-size: 26px; font-weight: 800; text-shadow: 0 2px 6px #000; pointer-events: none; text-align: center; transition: opacity .4s; opacity: 0; white-space: pre-line; }
+  #costs { position: fixed; right: 14px; top: 190px; width: 300px; pointer-events: none; text-align: right; }
+  #costs div { color: #ff8070; font-weight: 700; font-size: 16px; text-shadow: 0 1px 4px #000; margin: 3px 0; animation: costIn 3.2s forwards; }
+  @keyframes costIn { 0% { opacity: 0; transform: translateX(30px); } 8% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-12px); } }
+  #progress { position: fixed; top: 58%; left: 50%; transform: translateX(-50%); width: 320px; text-align: center; display: none; pointer-events: none; }
+  #progress .bar { height: 14px; } #progress .bar > div { background: #f2c14e; }
+  #controls { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; }
+  .btn { pointer-events: auto; cursor: pointer; border: 1px solid rgba(160, 210, 230, 0.5); background: rgba(10, 30, 40, 0.85); color: #e8f0f4; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-weight: 700; font-family: inherit; min-width: 92px; }
+  .btn:hover { background: rgba(30, 70, 90, 0.9); }
+  .btn.on { background: #2d8a4e; border-color: #8ef0a8; }
+  .btn.dash.on { background: #c0562a; border-color: #ffb08a; }
+  .btn.danger { background: rgba(120, 25, 20, 0.9); border-color: #ff9a8a; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .seg { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid rgba(160, 210, 230, 0.5); pointer-events: auto; }
+  .seg .btn { border: none; border-radius: 0; min-width: 60px; }
+  .ctlLabel { font-size: 10px; color: #9bb7c4; text-align: center; margin-bottom: 2px; }
+  #minimap { position: fixed; left: 12px; bottom: 12px; border: 1px solid rgba(140,190,210,0.45); border-radius: 6px; background: rgba(8,20,28,0.8); pointer-events: none; }
+  #labels div { position: fixed; transform: translate(-50%, -100%); font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px #000, 0 0 2px #000; pointer-events: none; white-space: nowrap; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4, 10, 16, 0.6); z-index: 20; }
+  #overlay.hidden { display: none; }
+  .card { background: rgba(10, 24, 34, 0.96); border: 1px solid rgba(150, 200, 220, 0.45); border-radius: 12px; padding: 26px 32px; max-width: 680px; width: calc(100% - 40px); max-height: 92vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+  .card h1 { margin: 0 0 6px; font-size: 34px; color: #ffd36a; letter-spacing: 1px; }
+  .card h2 { margin: 0 0 12px; font-size: 24px; color: #ffd36a; }
+  .card p { line-height: 1.65; margin: 8px 0; }
+  .card .sub { color: #9bb7c4; font-size: 13px; }
+  .card table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  .card td { padding: 5px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .card td:last-child { text-align: right; font-weight: 700; }
+  .card .btns { display: flex; gap: 12px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .card .btn { font-size: 16px; padding: 12px 22px; }
+  .captain { border-left: 4px solid #ffd36a; padding: 8px 14px; background: rgba(255, 211, 106, 0.08); font-size: 17px; margin: 12px 0; text-wrap: pretty; }
+  .card.captainCard { max-width: 800px; } /* 船長の長めのセリフ（ステージ10の3行など）がPCで1行ずつ収まる幅 */
+  .danger-meter { color: #ff8a6a; letter-spacing: 2px; }
+  .titleName { font-size: 28px; font-weight: 800; color: #ffd36a; text-align: center; margin: 10px 0; }
+  .keys { font-size: 13px; color: #c5d6de; }
+  .keys b { color: #fff; }
+  #whiteout { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 15; display: flex; align-items: center; justify-content: center; color: #555; font-size: 28px; font-weight: 700; letter-spacing: 4px; }
+  .rud { position: relative; height: 8px; background: rgba(255,255,255,0.12); border-radius: 4px; margin: 2px 0 2px; }
+  .rud #hRudBar { position: absolute; top: 0; height: 100%; background: #6ec6ff; border-radius: 4px; }
+  .rud .mid { position: absolute; left: 50%; top: -2px; width: 2px; height: 12px; background: #e8f0f4; transform: translateX(-1px); }
+  #costs div.fuel { color: #f2c14e; font-size: 13px; font-weight: 600; }
+  .card { position: relative; }
+  .catch { display: inline-block; margin: -4px 0 6px -6px; padding: 3px 12px; background: #c0392b; color: #fff; font-size: 17px; font-weight: 800; letter-spacing: 1px; transform: rotate(-4deg); box-shadow: 0 2px 8px rgba(0,0,0,0.5); border-radius: 3px; }
+  .card.legend { border-color: #ffd36a; box-shadow: 0 0 40px rgba(255, 211, 106, 0.35); }
+  .card.legend .titleName { font-size: 34px; text-shadow: 0 0 14px rgba(255, 211, 106, 0.7); }
+  .legendLabel { text-align: center; color: #ffd36a; letter-spacing: 6px; font-size: 13px; margin: 0; }
+  .quitCard { text-align: center; max-width: 520px; }
+  .quitCard h2 { margin-bottom: 14px; }
+  /* ---- サウンド設定 ---- */
+  .soundPanel { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; padding: 8px 10px; border: 1px solid rgba(150, 200, 220, 0.3); border-radius: 8px; font-size: 13px; }
+  .soundPanel .lbl { color: #9bb7c4; }
+  .soundPanel .hint { font-size: 11px; width: 100%; text-align: center; }
+  .soundPanel input[type=range] { width: 110px; accent-color: #ffd36a; cursor: pointer; }
+  .btn.mini { min-width: 48px; padding: 4px 8px; font-size: 12px; }
+  /* ---- 第11ステージの最終イベント ---- */
+  #hud, #labels { transition: opacity 1.8s; }
+  #alertFrame { position: fixed; inset: 0; pointer-events: none; z-index: 12; display: none; box-shadow: inset 0 0 90px 30px rgba(255, 20, 10, 0.75); animation: alertPulse 0.5s infinite alternate; }
+  @keyframes alertPulse { from { opacity: 1; } to { opacity: 0.35; } }
+  #alertText { position: fixed; top: 30%; left: 50%; transform: translate(-50%, -50%); z-index: 13; display: none; text-align: center; pointer-events: none;
+    color: #fff; background: rgba(160, 10, 5, 0.85); border: 2px solid #ff8a7a; border-radius: 8px; padding: 14px 34px; font-size: 30px; font-weight: 900; letter-spacing: 3px; line-height: 1.5; white-space: pre-line; text-shadow: 0 2px 6px #000; }
+  #radio { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); width: min(620px, calc(100% - 32px)); z-index: 13; display: none; pointer-events: none;
+    background: rgba(6, 20, 26, 0.86); border: 1px solid rgba(140, 220, 200, 0.6); border-radius: 8px; padding: 12px 18px; transition: opacity 1.5s; }
+  #radio .head { color: #8fe8c8; font-size: 13px; font-weight: 700; letter-spacing: 2px; margin-bottom: 6px; }
+  #radio .head .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #5fe0a8; margin-right: 6px; animation: alertPulse 0.6s infinite alternate; }
+  #radio .line { color: #eafff6; font-size: 18px; line-height: 1.7; opacity: 0; transition: opacity 0.8s; }
+  #radio .line.show { opacity: 1; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 14; }
+  .card.legend .titleName { animation: legendIn 2.4s ease-out both; }
+  .card.legend .legendLabel { animation: legendIn 1.6s ease-out both; }
+  @keyframes legendIn { from { opacity: 0; transform: scale(0.92); letter-spacing: 10px; } to { opacity: 1; transform: none; } }
+  #pauseHint { position: fixed; right: 12px; bottom: 12px; font-size: 11px; color: #9bb7c4; pointer-events: none; }
+
+  /* =====================================================================
+     スマートフォン（タッチ端末）用。html に touch クラスが付いたときだけ有効。
+     PC では touchUI・rotate は表示されず、ここ以外のレイアウトは変わらない。
+     ===================================================================== */
+  #touchUI, #rotate, .touchOnly { display: none; }
+  html.touch .touchOnly { display: block; }
+  html.touch .pcOnly, html.touch #controls, html.touch #pauseHint { display: none !important; }
+  html.touch, html.touch body { touch-action: none; overscroll-behavior: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; }
+  html.touch #game canvas { cursor: default; }
+  html.touch .card { touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; max-height: calc(100% - 16px); }
+  html.touch #touchUI { display: block; }
+  .tbtn { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; border: 2px solid rgba(160, 210, 230, 0.55); background: rgba(10, 30, 40, 0.55);
+    color: #e8f0f4; font-family: inherit; font-weight: 800; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; padding: 0; }
+  .tbtn small { font-size: 10px; font-weight: 600; color: #b8ccd6; margin-top: 2px; }
+  .tbtn.pressed { background: rgba(255, 211, 106, 0.45); border-color: #ffd36a; transform: scale(0.96); }
+  .tbtn.on { background: rgba(45, 138, 78, 0.75); border-color: #8ef0a8; }
+  .tbtn.dashOn { background: rgba(192, 86, 42, 0.8); border-color: #ffb08a; }
+  .tbtn:disabled { opacity: 0.3; }
+  #tcLeft { position: fixed; left: calc(16px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; gap: 20px; }
+  #tcLeft .tbtn { width: 78px; height: 78px; border-radius: 50%; font-size: 30px; }
+  #tcRight { position: fixed; right: calc(16px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; gap: 14px; align-items: flex-end; }
+  #tcRight .tcol { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  #tcRight .tbtn { width: 64px; height: 52px; font-size: 15px; }
+  #tThr { font-size: 11px; font-weight: 700; color: #ffd36a; text-shadow: 0 1px 3px #000; pointer-events: none; height: 12px; margin: -6px 0; }
+  #tcTop { position: fixed; top: calc(8px + env(safe-area-inset-top)); left: calc(50% + 180px); display: flex; gap: 8px; }
+  #tcTop .tbtn { width: 46px; height: 40px; font-size: 18px; }
+  #tCancel { position: fixed; right: calc(176px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom)); width: 96px; height: 46px; font-size: 13px;
+    background: rgba(120, 25, 20, 0.75); border-color: #ff9a8a; }
+  #rotate { position: fixed; inset: 0; z-index: 60; background: #0d1a22; color: #e8f0f4; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+  #rotate .icon { font-size: 64px; animation: rot 2s ease-in-out infinite; }
+  #rotate p { font-size: 18px; line-height: 1.6; margin: 16px 0 0; }
+  @keyframes rot { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) { html.touch #rotate { display: flex; } }
+  /* タッチ端末（タブレットなど背の高い画面も含む）：左下は操舵ボタンにするため、ミニマップと減額表示を移動 */
+  html.touch #minimap { left: auto; bottom: auto; right: calc(12px + env(safe-area-inset-right)); top: calc(176px + env(safe-area-inset-top)); }
+  html.touch #costs { left: calc(14px + env(safe-area-inset-left)); right: auto; top: 330px; text-align: left; }
+
+  /* 背の低い横画面（スマートフォン）では HUD をコンパクトにする */
+  @media (max-height: 520px) {
+    html.touch { --s: 0.64; }
+    html.touch .panel.hudp { transform-origin: top left; transform: scale(var(--s)); }
+    html.touch #status { top: calc(6px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); }
+    html.touch #status .opt { display: none; }
+    html.touch #money { transform-origin: top right; transform: scale(var(--s)); top: calc(6px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); }
+    html.touch #objective { transform-origin: top center; transform: translateX(-50%) scale(var(--s)); top: calc(6px + env(safe-area-inset-top)); }
+    html.touch #warn { top: calc(62px + env(safe-area-inset-top)); }
+    html.touch #warn div { font-size: 11px; padding: 3px 8px; margin: 2px; }
+    html.touch #msg { font-size: 18px; top: 30%; }
+    html.touch #costs { left: calc(8px + env(safe-area-inset-left)); right: auto; top: calc(178px + env(safe-area-inset-top)); width: 220px; text-align: left; }
+    html.touch #costs div { font-size: 12px; margin: 1px 0; }
+    html.touch #costs div:nth-last-child(n+5) { display: none; }
+    html.touch #minimap { left: auto; bottom: auto; right: calc(8px + env(safe-area-inset-right)); top: calc(108px + env(safe-area-inset-top)); width: 60px; height: 106px; }
+    html.touch #progress { width: 220px; top: 52%; font-size: 12px; }
+    html.touch #labels div { font-size: 10px; }
+    html.touch #alertText { font-size: 20px; padding: 8px 18px; }
+    html.touch #radio { width: min(380px, calc(100% - 392px)); min-width: 260px; bottom: auto; top: calc(60px + env(safe-area-inset-top)); padding: 6px 10px; }
+    html.touch #radio .line { font-size: 13px; line-height: 1.5; }
+    html.touch #tcTop { left: auto; right: calc(188px + env(safe-area-inset-right)); top: calc(4px + env(safe-area-inset-top)); }
+    html.touch #objective { min-width: 240px; }
+    html.touch .card { padding: 14px 18px; width: calc(100% - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)); }
+    html.touch .card h1 { font-size: 22px; }
+    html.touch .card h2 { font-size: 18px; margin-bottom: 6px; }
+    html.touch .card p { font-size: 13px; line-height: 1.5; margin: 5px 0; }
+    html.touch .card table { font-size: 12px; margin: 6px 0; }
+    html.touch .card td { padding: 3px; }
+    html.touch .card .btns { margin-top: 10px; }
+    html.touch .card .btn { font-size: 14px; padding: 10px 18px; }
+    html.touch .captain { font-size: 14px; padding: 6px 10px; margin: 8px 0; }
+    html.touch .titleName { font-size: 22px; margin: 6px 0; }
+    html.touch .card.legend .titleName { font-size: 26px; }
+    html.touch .catch { font-size: 14px; }
+    html.touch .soundPanel { margin-top: 8px; padding: 6px; }
+    html.touch .soundPanel input[type=range] { width: 120px; height: 28px; }
+  }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="labels"></div>
+
+<div id="hud">
+  <div id="status" class="panel hudp">
+    <div class="row"><span class="lbl">ステージ</span><span id="hStage" class="big">1 / 10</span></div>
+    <div class="row"><span class="lbl">積荷</span><span id="hCargo">空荷</span></div>
+    <div class="row"><span class="lbl">船体状態</span><span id="hHull">100%</span></div>
+    <div class="bar"><div id="hHullBar" style="width:100%"></div></div>
+    <div class="row"><span class="lbl">ドローン被弾</span><span id="hDrone">0回</span></div>
+    <div class="bar"><div id="hDroneBar" style="width:0%; background:#ff7a4a"></div></div>
+    <div class="row opt"><span class="lbl">銃撃被弾</span><span id="hGun">0発</span></div>
+    <div class="row"><span class="lbl">乗組員</span><span id="hCrew">負傷 0 / 18名</span></div>
+    <div class="row opt"><span class="lbl">機関状態</span><span id="hEngine">正常</span></div>
+    <div class="row"><span class="lbl">速力</span><span id="hSpeed">0 kt</span></div>
+    <div class="row"><span class="lbl">被発見リスク</span><span id="hExpo">—</span></div>
+    <div class="row"><span class="lbl">舵角<span class="pcOnly" style="display:inline"> (A/D)</span></span><span id="hRudder">中央</span></div>
+    <div class="rud"><div id="hRudBar"></div><span class="mid"></span></div>
+  </div>
+  <div id="money" class="panel">
+    <div class="lbl">未清算の契約報酬</div>
+    <div id="hPending" class="big pos">$3,000,000</div>
+    <div class="row" style="justify-content:flex-end"><span class="lbl">今回の損失&nbsp;</span><span id="hLoss" class="neg">$0</span></div>
+    <div class="lbl" style="margin-top:6px">清算済み累計スコア</div>
+    <div id="hBanked" class="big">$0</div>
+  </div>
+  <div id="objective" class="panel">
+    <div id="hObjective" style="font-weight:700">目的：原油ターミナルへ向かえ</div>
+    <div id="hGps" style="margin-top:4px">
+      <svg id="gpsArrow" viewBox="0 0 40 40"><polygon points="20,3 32,34 20,26 8,34" fill="#ffd36a" stroke="#000" stroke-width="1"/></svg>
+      <span id="hDist">--</span>
+    </div>
+  </div>
+  <div id="warn"></div>
+  <div id="costs"></div>
+  <div id="progress" class="panel"><div id="progLabel">原油積み込み中…</div><div class="bar"><div id="progBar" style="width:0%"></div></div></div>
+  <div id="controls">
+    <div><div class="ctlLabel">スロットル (W/S)</div>
+      <div class="seg">
+        <button class="btn" data-throttle="0">停止</button>
+        <button class="btn" data-throttle="1">半速</button>
+        <button class="btn on" data-throttle="2">通常</button>
+      </div></div>
+    <div><div class="ctlLabel">ダッシュ (Space)</div><button id="btnDash" class="btn dash">DASH OFF</button></div>
+    <div><div class="ctlLabel">GPS (G)</div><button id="btnGps" class="btn on">GPS ON</button></div>
+    <div><div class="ctlLabel">海峡進入前のみ</div><button id="btnCancel" class="btn danger">契約破棄</button></div>
+  </div>
+  <canvas id="minimap" width="130" height="230"></canvas>
+  <div id="pauseHint">P / Esc：一時停止</div>
+  <!-- スマートフォン用タッチ操作（PCでは表示されない） -->
+  <div id="touchUI">
+    <div id="tcLeft">
+      <button class="tbtn" data-hold="left" aria-label="左に舵を切る">◀</button>
+      <button class="tbtn" data-hold="right" aria-label="右に舵を切る">▶</button>
+    </div>
+    <div id="tcRight">
+      <div class="tcol">
+        <button class="tbtn" data-tap="up" aria-label="加速">▲<small>加速</small></button>
+        <div id="tThr">通常</div>
+        <button class="tbtn" data-tap="down" aria-label="減速">▼<small>減速</small></button>
+      </div>
+      <div class="tcol">
+        <button class="tbtn" id="tDash" data-tap="dash">DASH</button>
+        <button class="tbtn" id="tGps" data-tap="gps">GPS</button>
+      </div>
+    </div>
+    <button class="tbtn" id="tCancel" data-tap="cancel">契約破棄<small>海峡入口まで</small></button>
+    <div id="tcTop"><button class="tbtn" id="tPause" data-tap="pause" aria-label="一時停止">II</button></div>
+  </div>
+</div>
+<div id="msg"></div>
+<div id="whiteout"></div>
+<div id="alertFrame"></div>
+<div id="alertText"></div>
+<div id="radio"><div class="head"><span class="dot"></span>緊急無線 受信中</div><div id="radioLines"></div></div>
+<div id="fade"></div>
+<div id="overlay"></div>
+<div id="rotate"><div class="icon">📱</div><p>スマートフォンを<b>横向き</b>にしてプレイしてください</p></div>
+
+<!-- Three.js (CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="config.js"></script>
+<script src="dialogues.js"></script>
+<script src="bgm_config.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
